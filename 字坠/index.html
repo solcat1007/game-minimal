@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>字坠 — 汉字坠落</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{background:#fff;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'STKaiti','KaiTi','楷体','SimSun','宋体',serif;user-select:none}
+#gc{position:relative;width:700px;height:560px;border:1px solid #111}
+canvas{display:block}
+#ol{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;pointer-events:none;z-index:10}
+#ol.on{pointer-events:auto}
+#ts{text-align:center}
+#ts .gt{font-size:52px;color:#111;letter-spacing:14px;margin-bottom:10px}
+#ts .st{font-size:13px;color:#666;letter-spacing:3px;line-height:2.2}
+.btn{padding:10px 40px;font-size:15px;background:#fff;color:#111;border:1px solid #111;cursor:pointer;font-family:inherit;letter-spacing:4px;transition:all .2s;margin-top:20px}
+.btn:hover{background:#111;color:#fff}
+#gos{display:none;flex-direction:column;align-items:center;gap:10px}
+#gos .got{font-size:28px;color:#111;letter-spacing:6px}
+#gos .gosc{font-size:18px;color:#333}
+#gos .gosd{font-size:12px;color:#bbb}
+@media(max-width:720px){#gc{width:100vw;height:80vw;max-height:100vh}}
+</style>
+</head>
+<body>
+<div id="gc">
+<canvas id="c"></canvas>
+<div id="ol" class="on">
+<div id="ts">
+<div class="gt">字 坠</div>
+<div class="st">
+汉字从天而降，输入<span style="color:#111;font-weight:bold">拼音首字母</span>将其击碎<br>
+<span style="color:#111">Esc</span> 退出 · 漏掉一字失去一次机会
+</div>
+<button class="btn" id="bs">开 始</button>
+</div>
+<div id="gos">
+<div class="got" id="fs"></div>
+<div class="gosc" id="scs"></div>
+<div class="gosd" id="sdd"></div>
+<button class="btn" id="rb">再 来</button><button class="btn" id="rq" style="margin-top:6px;color:#888;border-color:#ccc">返回标题</button>
+</div>
+</div>
+</div>
+<script>
+const W=700,H=560;
+const ca=document.getElementById('c'),cx=ca.getContext('2d');
+ca.width=W;ca.height=H;
+
+// 汉字库（常用字+拼音首字母）
+const WORDS=[
+  {c:'天',p:'t'},{c:'地',p:'d'},{c:'人',p:'r'},{c:'山',p:'s'},{c:'水',p:'s'},{c:'火',p:'h'},{c:'风',p:'f'},
+  {c:'云',p:'y'},{c:'雨',p:'y'},{c:'雪',p:'x'},{c:'日',p:'r'},{c:'月',p:'y'},{c:'星',p:'x'},{c:'河',p:'h'},
+  {c:'木',p:'m'},{c:'林',p:'l'},{c:'森',p:'s'},{c:'石',p:'s'},{c:'金',p:'j'},{c:'玉',p:'y'},{c:'花',p:'h'},
+  {c:'鸟',p:'n'},{c:'鱼',p:'y'},{c:'虫',p:'c'},{c:'龙',p:'l'},{c:'凤',p:'f'},{c:'虎',p:'h'},{c:'马',p:'m'},
+  {c:'春',p:'c'},{c:'夏',p:'x'},{c:'秋',p:'q'},{c:'冬',p:'d'},{c:'光',p:'g'},{c:'影',p:'y'},{c:'声',p:'s'},
+  {c:'心',p:'x'},{c:'梦',p:'m'},{c:'剑',p:'j'},{c:'书',p:'s'},{c:'画',p:'h'},{c:'诗',p:'s'},{c:'酒',p:'j'},
+  {c:'道',p:'d'},{c:'禅',p:'c'},{c:'空',p:'k'},{c:'色',p:'s'},{c:'无',p:'w'},{c:'有',p:'y'},{c:'一',p:'y'},
+  {c:'千',p:'q'},{c:'万',p:'w'},{c:'白',p:'b'},{c:'黑',p:'h'},{c:'红',p:'h'},{c:'青',p:'q'},{c:'绿',p:'l'},
+  {c:'大',p:'d'},{c:'小',p:'x'},{c:'高',p:'g'},{c:'远',p:'y'},{c:'近',p:'j'},{c:'深',p:'s'},{c:'浅',p:'q'},
+];
+
+let st='title',sc=0,lives=3,fc=0;
+let chars=[],spawnT=0,spawnIv=70,diff=1,bestSc=parseInt(localStorage.getItem('zizhui_best')||'0');
+let inputBuffer='',showFeedback='',fbT=0;
+let shakeX=0;
+
+class Char{
+  constructor(){
+    const w=WORDS[Math.floor(Math.random()*WORDS.length)];
+    this.c=w.c;this.p=w.p;this.x=60+Math.random()*(W-120);this.y=-30;
+    this.vy=.6+Math.random()*.8*diff;this.r=18;this.alive=true;
+    this.sway=Math.random()*Math.PI*2;this.swaySp=.01+Math.random()*.02;
+  }
+  up(){this.y+=this.vy;this.sway+=this.swaySp;this.x+=Math.sin(this.sway)*.5}
+  gone(){return this.y>H+40||!this.alive}
+  draw(){
+    cx.save();cx.globalAlpha=Math.min(1,this.y<20?(this.y+30)/50:1);
+    cx.fillStyle='#111';cx.font='bold 28px "STKaiti","楷体",serif';cx.textAlign='center';
+    cx.fillText(this.c,this.x,this.y);
+    // 描边微光
+    cx.strokeStyle='rgba(0,0,0,.1)';cx.lineWidth=1;
+    cx.strokeText(this.c,this.x,this.y);
+    cx.restore();
+  }
+}
+
+function spP(x,y,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2,s=1+Math.random()*4;
+    chars.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,life:10+Math.random()*10,c:'',p:'',alive:true,sway:0,swaySp:0,r:1,isP:true});
+  }
+}
+
+function loop(){
+  fc++;
+  if(st==='title'){drawTitle();requestAnimationFrame(loop);return}
+  if(st==='gameover'){drawGO();requestAnimationFrame(loop);return}
+
+  diff=1+Math.floor(sc/8)*.12;
+  spawnIv=Math.max(28,70-Math.floor(sc/6)*2);
+  if(fbT>0)fbT--;
+  if(shakeX>0)shakeX*=0.85;if(Math.abs(shakeX)<.3)shakeX=0;
+
+  spawnT++;if(spawnT>spawnIv){spawnT=0;chars.push(new Char())}
+
+  for(const ch of chars)if(!ch.isP)ch.up();
+
+  // 碰撞检测 — 漏字
+  for(let i=chars.length-1;i>=0;i--){
+    const ch=chars[i];
+    if(ch.isP){ch.life--;ch.x+=ch.vx;ch.y+=ch.vy;if(ch.life<=0)chars.splice(i,1);continue}
+    if(ch.gone()){chars.splice(i,1);if(ch.alive){lives--;shakeX=10;if(lives<=0){gameOver();return}}}
+  }
+
+  renderPlaying();
+  requestAnimationFrame(loop);
+}
+
+function renderPlaying(){
+  cx.fillStyle='#fff';cx.fillRect(0,0,W,H);
+  // 淡网格
+  cx.strokeStyle='#f5f5f5';cx.lineWidth=.5;
+  for(let x=0;x<W;x+=35){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke()}
+  for(let y=0;y<H;y+=35){cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke()}
+
+  // 屏幕震动（统一偏移，不随机抖动文字位置）
+  const shake = shakeX > 0.3 ? (Math.random() - 0.5) * shakeX : 0;
+  cx.save();
+  if (shakeX > 0.3) cx.translate(shake, 0);
+
+  // 落字
+  for(const ch of chars) if(!ch.isP) ch.draw();
+
+  // 粒子（每个粒子独立 save/restore，不污染后续渲染）
+  for(const ch of chars){
+    if(!ch.isP) continue;
+    cx.save();
+    cx.globalAlpha = ch.life / 10;
+    cx.fillStyle = '#333';
+    cx.beginPath();
+    cx.arc(ch.x, ch.y, ch.r, 0, Math.PI * 2);
+    cx.fill();
+    cx.restore();
+  }
+
+  // 输入反馈
+  if(fbT > 0 && showFeedback){
+    cx.save();
+    cx.globalAlpha = fbT / 40;
+    cx.fillStyle = '#111';
+    cx.font = 'bold 36px "STKaiti","楷体",serif';
+    cx.textAlign = 'center';
+    cx.fillText(showFeedback, W / 2, H / 2 - 40);
+    cx.restore();
+  }
+
+  // HUD
+  cx.fillStyle = '#111';
+  cx.font = '15px "STKaiti","楷体",serif';
+  cx.textAlign = 'left';
+  cx.fillText(`击碎 ${sc}`, 16, 32);
+  cx.textAlign = 'right';
+  cx.fillText(`最佳 ${bestSc}`, W - 16, 32);
+  cx.font = '13px "STKaiti","楷体",serif';
+  cx.textAlign = 'left';
+  const hearts = '●'.repeat(Math.max(0, lives)) + '○'.repeat(Math.max(0, 3 - lives));
+  cx.fillStyle = lives <= 1 ? '#111' : '#aaa';
+  cx.fillText(hearts, 16, 54);
+  cx.fillStyle = '#ddd';
+  cx.font = '12px "STKaiti","楷体",serif';
+  cx.textAlign = 'center';
+  cx.fillText('输入拼音首字母击碎汉字', W / 2, H - 24);
+
+  cx.restore(); // 恢复屏幕震动
+}
+
+function drawTitle(){
+  cx.fillStyle='#fff';cx.fillRect(0,0,W,H);
+  for(let y=0;y<H;y+=35){cx.strokeStyle='#f5f5f5';cx.lineWidth=.5;cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke()}
+  for(let i=0;i<8;i++){
+    cx.fillStyle='rgba(0,0,0,.03)';cx.font=`${24+Math.abs(Math.sin(i))*10}px "STKaiti","楷体",serif`;
+    cx.textAlign='center';cx.fillText(WORDS[i*8].c,80+i*80,200+Math.sin(i*1.5+fc*.01)*40);
+  }
+}
+
+function drawGO(){
+  cx.fillStyle='#fff';cx.fillRect(0,0,W,H);
+  for(const ch of chars) if(!ch.isP) ch.draw();
+  for(const ch of chars){
+    if(!ch.isP) continue;
+    cx.save();
+    cx.globalAlpha = ch.life / 10;
+    cx.fillStyle = '#333';
+    cx.beginPath();
+    cx.arc(ch.x, ch.y, ch.r, 0, Math.PI * 2);
+    cx.fill();
+    cx.restore();
+  }
+}
+
+function gameOver(){
+  st='gameover';
+  if(sc>bestSc){bestSc=sc;localStorage.setItem('zizhui_best',bestSc)}
+  let ttl='',sub='';
+  if(sc<5){ttl='初识字';sub='你识得寥寥数字，还需勤加练习。'}
+  else if(sc<15){ttl='识字郎';sub='你能认出一些字了，但还不够。'}
+  else if(sc<30){ttl='读书人';sub='汉字在你手中纷纷坠落，渐入佳境。'}
+  else if(sc<60){ttl='诗书满腹';sub='汉字如雨，你无一遗漏。'}
+  else{ttl='字圣';sub='千字过眼，一字不落。你是真正的字圣。'}
+  document.getElementById('fs').textContent=ttl;
+  document.getElementById('scs').textContent=`击碎 ${sc} 字`;
+  document.getElementById('sdd').textContent=sub;
+  document.getElementById('gos').style.display='flex';
+  document.getElementById('ol').classList.add('on');
+}
+
+// ===== 输入 =====
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if(st==='playing'||st==='gameover')quitToTitle();return}
+  if(st!=='playing')return;
+  const key=e.key.toLowerCase();
+  if(key.length!==1||!/[a-z]/.test(key))return;
+  // 查找匹配的字（最近的、最下落的优先）
+  let found=null,foundIdx=-1;
+  for(let i=chars.length-1;i>=0;i--){
+    const ch=chars[i];
+    if(ch.isP||!ch.alive)continue;
+    if(ch.p===key&&ch.y>0){
+      if(!found||ch.y>found.y){found=ch;foundIdx=i}
+    }
+  }
+  if(found){
+    found.alive=false;sc++;
+    spP(found.x,found.y,8);
+    showFeedback=found.c;fbT=40;
+    chars.splice(foundIdx,1);
+  }
+});
+
+// ===== 按钮 =====
+document.getElementById('bs').addEventListener('click',start);
+document.getElementById('rb').addEventListener('click',start);
+document.getElementById('rq').addEventListener('click',quitToTitle);
+
+function start(){
+  chars=[];sc=0;lives=3;fc=0;spawnT=0;spawnIv=70;diff=1;inputBuffer='';showFeedback='';fbT=0;shakeX=0;
+  st='playing';
+  document.getElementById('ts').style.display='none';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('ol').classList.remove('on');
+}
+
+function quitToTitle(){
+  st='title';chars=[];sc=0;lives=3;
+  document.getElementById('ts').style.display='block';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('ol').classList.add('on');
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

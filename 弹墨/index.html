@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>弹墨 — 极简打砖块</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{background:#fff;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'STKaiti','KaiTi','楷体',sans-serif;user-select:none}
+#gc{position:relative;width:700px;height:500px;border:1px solid #111}
+canvas{display:block;cursor:none}
+#ol{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;pointer-events:none;z-index:10}
+#ol.on{pointer-events:auto}
+#ts .gt{font-size:46px;color:#111;letter-spacing:10px;margin-bottom:8px}
+#ts .st{font-size:13px;color:#666;letter-spacing:2px;line-height:2.2}
+.btn{padding:10px 40px;font-size:15px;background:#fff;color:#111;border:1px solid #111;cursor:pointer;font-family:inherit;letter-spacing:4px;transition:all .2s;margin-top:14px}
+.btn:hover{background:#111;color:#fff}
+#gos{display:none;flex-direction:column;align-items:center;gap:8px}
+#gos .got{font-size:26px;color:#111;letter-spacing:4px}
+#gos .gosc{font-size:15px;color:#333}
+@media(max-width:720px){#gc{width:100vw;height:71vw;max-height:100vh}}
+</style>
+</head>
+<body>
+<div id="gc">
+<canvas id="c"></canvas>
+<div id="ol" class="on">
+<div id="ts">
+<div class="gt">弹 墨</div>
+<div class="st">
+移动鼠标控制拍板，反弹墨珠击碎砖块<br>
+<span style="color:#111">Esc</span> 退出 · <span style="color:#111">空格</span> 发射 · 墨珠落地失去一次机会
+</div>
+<button class="btn" id="bs">开 始</button>
+</div>
+<div id="gos">
+<div class="got" id="fs"></div>
+<div class="gosc" id="scs"></div>
+<button class="btn" id="rb">再 来</button><button class="btn" id="rq" style="color:#888;border-color:#ccc">返回标题</button>
+</div>
+</div>
+</div>
+<script>
+const W=700,H=500;
+const ca=document.getElementById('c'),cx=ca.getContext('2d');
+ca.width=W;ca.height=H;
+
+let st='title',fc=0;
+let padX=W/2,padW=100,padH=12,padY=H-40;
+let ballX,ballY,ballVX,ballVY,ballR=6,ballSpeed=6,ballLaunched=false;
+let lives=3,sc=0,lv=1,maxLv=8,bestSc=parseInt(localStorage.getItem('tanmo_best')||'0');
+let bricks=[];
+let particles=[];
+let shakeT=0;
+
+// 砖块布局
+const BRICK_ROWS=6,BRICK_COLS=12,BRICK_W=48,BRICK_H=16,BRICK_GAP=4;
+const BRICK_OX=26,BRICK_OY=60;
+
+function buildBricks(){
+  bricks=[];
+  const totalTypes=Math.min(3+lv,6);
+  for(let r=0;r<BRICK_ROWS;r++){
+    for(let c=0;c<BRICK_COLS;c++){
+      const t=Math.floor(Math.random()*totalTypes); // 0=普通,1+=需要多次击打
+      bricks.push({x:BRICK_OX+c*(BRICK_W+BRICK_GAP),y:BRICK_OY+r*(BRICK_H+BRICK_GAP),
+        w:BRICK_W,h:BRICK_H,hp:1+t,alive:true});
+    }
+  }
+}
+
+function initRound(){
+  padX=W/2;padW=Math.max(60,120-lv*4);
+  ballLaunched=false;
+  ballX=padX;ballY=padY-padH/2-ballR;
+  ballVX=0;ballVY=0;
+  ballSpeed=6+lv*.5;
+}
+
+function start(){
+  document.getElementById('ts').style.display='none';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('ol').classList.remove('on');
+  lv=1;sc=0;lives=3;particles=[];shakeT=0;
+  buildBricks();initRound();st='playing';
+  document.getElementById('c').style.cursor='none';
+}
+
+function quitToTitle(){
+  st='title';lives=3;sc=0;ballLaunched=false;bricks=[];particles=[];
+  document.getElementById('ts').style.display='block';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('ol').classList.add('on');
+  document.getElementById('c').style.cursor='default';
+}
+
+function gameOver(msg){
+  st='gameover';
+  if(sc>bestSc){bestSc=sc;localStorage.setItem('tanmo_best',bestSc)}
+  let ttl,sub;
+  if(sc<20){ttl='试墨';sub='墨迹斑驳，尚显生疏。'}
+  else if(sc<60){ttl='研墨';sub='墨色渐浓，手眼渐合。'}
+  else if(sc<120){ttl='泼墨';sub='墨珠如飞，砖碎千片。'}
+  else if(sc<200){ttl='入墨';sub='人墨合一，无一遗漏。'}
+  else{ttl='墨圣';sub='墨珠所至，无砖不破。'}
+  document.getElementById('fs').textContent=ttl;
+  document.getElementById('scs').textContent=`${msg||''} · 击碎 ${sc} 砖 · 最佳 ${bestSc}`;
+  document.getElementById('gos').style.display='flex';
+  document.getElementById('ol').classList.add('on');
+  document.getElementById('c').style.cursor='default';
+}
+
+function knockBall(){
+  if(ballLaunched)return;
+  ballLaunched=true;
+  const angle=-Math.PI/2+(Math.random()-.5)*.8; // 随机偏转角度
+  ballVX=Math.cos(angle)*ballSpeed;
+  ballVY=Math.sin(angle)*ballSpeed;
+}
+
+function spP(x,y,n,c){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2,s=.8+Math.random()*3;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:12+Math.random()*10,color:c||'#333'});
+  }
+}
+
+function render(){
+  cx.fillStyle='#fff';cx.fillRect(0,0,W,H);
+
+  // 网格
+  cx.strokeStyle='#f8f8f8';cx.lineWidth=.5;
+  for(let x=0;x<W;x+=25){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke()}
+
+  // 砖块
+  for(const b of bricks){
+    if(!b.alive)continue;
+    cx.fillStyle=b.hp>1?'#222':'#111';
+    if(b.hp>2)cx.fillStyle='#333';
+    cx.fillRect(b.x,b.y,b.w,b.h);
+    // 边框
+    cx.strokeStyle='#fff';cx.lineWidth=1;
+    cx.strokeRect(b.x+.5,b.y+.5,b.w-1,b.h-1);
+  }
+
+  // 墨珠
+  if(st==='playing'){
+    cx.beginPath();cx.arc(ballX,ballY,ballR,0,Math.PI*2);
+    cx.fillStyle='#111';cx.fill();
+    // 墨迹尾迹
+    if(ballLaunched){
+      cx.beginPath();cx.arc(ballX-ballVX*.3,ballY-ballVY*.3,ballR*.7,0,Math.PI*2);
+      cx.fillStyle='rgba(0,0,0,.12)';cx.fill();
+    }
+
+    // 拍板
+    cx.fillStyle='#111';cx.fillRect(padX-padW/2,padY-padH/2,padW,padH);
+    // 拍板墨迹纹理
+    cx.strokeStyle='rgba(0,0,0,.08)';
+    for(let i=1;i<6;i++){cx.beginPath();cx.moveTo(padX-padW/2+i*padW/6,padY-padH/2);cx.lineTo(padX-padW/2+i*padW/6,padY+padH/2);cx.stroke()}
+  }
+
+  // 粒子
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];p.life--;if(p.life<=0){particles.splice(i,1);continue}
+    p.x+=p.vx;p.y+=p.vy;p.vy+=.1;
+    cx.globalAlpha=p.life/25;
+    cx.fillStyle=p.color;cx.beginPath();cx.arc(p.x,p.y,1.2,0,Math.PI*2);cx.fill();
+  }cx.globalAlpha=1;
+
+  // 振屏
+  if(shakeT>0)shakeT--;
+
+  // HUD
+  if(st==='playing'){
+    cx.fillStyle='#111';cx.font='15px "STKaiti","楷体",serif';cx.textAlign='left';
+    cx.fillText(`第 ${lv} / ${maxLv} 关 · 击碎 ${sc}`,16,30);
+    cx.textAlign='right';
+    const hearts='●'.repeat(Math.max(0,lives))+'○'.repeat(Math.max(0,3-lives));
+    cx.fillText(hearts,W-16,30);
+  }
+
+  if(st==='title')drawTitleOverlay();
+}
+
+function drawTitleOverlay(){
+  const chars=['弹','墨','破','碎','飞','溅','落'];
+  for(let i=0;i<chars.length;i++){
+    cx.fillStyle=`rgba(0,0,0,${0.03+Math.sin(i*1.5+fc*.015)*0.03})`;
+    cx.font=`${28+Math.abs(Math.cos(i*.9+fc*.01))*16}px "STKaiti","楷体",serif`;
+    cx.textAlign='center';cx.fillText(chars[i],60+i*95,220+Math.sin(i+fc*.008)*30);
+  }
+}
+
+function ballHitBrick(b){
+  if(!b.alive)return false;
+  const bx=b.x,by=b.y,bw=b.w,bh=b.h;
+  const cx=ballX,cy=ballY,r=ballR;
+  // AABB vs circle
+  const nearX=Math.max(bx,Math.min(cx,bx+bw));
+  const nearY=Math.max(by,Math.min(cy,by+bh));
+  const dx=cx-nearX,dy=cy-nearY;
+  return dx*dx+dy*dy<r*r;
+}
+
+function update(){
+  if(st!=='playing')return;
+  if(!ballLaunched){
+    ballX=padX;
+    return;
+  }
+
+  ballX+=ballVX;ballY+=ballVY;
+
+  // 墙面反弹
+  if(ballX-ballR<0){ballX=ballR;ballVX=Math.abs(ballVX);spP(0,ballY,4,'#999')}
+  if(ballX+ballR>W){ballX=W-ballR;ballVX=-Math.abs(ballVX);spP(W,ballY,4,'#999')}
+  if(ballY-ballR<0){ballY=ballR;ballVY=Math.abs(ballVY);spP(ballX,0,4,'#999')}
+
+  // 落底
+  if(ballY+ballR>H+20){
+    lives--;shakeT=10;
+    if(lives<=0){gameOver('墨尽');return}
+    initRound();
+    return;
+  }
+
+  // 拍板碰撞
+  if(ballVY>0&&ballY+ballR>padY-padH/2&&ballY-ballR<padY+padH/2&&ballX>padX-padW/2-ballR&&ballX<padX+padW/2+ballR){
+    ballY=padY-padH/2-ballR;
+    // 根据击打位置偏转
+    const relX=(ballX-padX)/(padW/2); // -1 to 1
+    const angle=(-Math.PI/2+relX*1.0); // 最大偏转约57度
+    const spd=Math.sqrt(ballVX*ballVX+ballVY*ballVY);
+    ballVX=Math.cos(angle)*spd;ballVY=-Math.abs(Math.sin(angle)*spd);
+    spP(ballX,ballY+ballR,6,'#555');
+  }
+
+  // 砖块碰撞
+  let hitAny=false;
+  for(const b of bricks){
+    if(!b.alive)continue;
+    if(ballHitBrick(b)){
+      b.hp--;
+      if(b.hp<=0){b.alive=false;sc++}
+      spP(ballX,ballY,5,b.hp<=0?'#111':'#999');
+      hitAny=true;
+      // 反弹方向
+      const bcx=b.x+b.w/2,bcy=b.y+b.h/2;
+      const dx=ballX-bcx,dy=ballY-bcy;
+      if(Math.abs(dx/b.w)>Math.abs(dy/b.h)){
+        ballVX=-ballVX;ballX+=ballVX>0?2:-2;
+      }else{
+        ballVY=-ballVY;ballY+=ballVY>0?2:-2;
+      }
+      break; // 一次只处理一块砖
+    }
+  }
+
+  // 检查通关
+  const aliveBricks=bricks.filter(b=>b.alive).length;
+  if(aliveBricks===0){
+    lv++;
+    if(lv>maxLv){gameOver('通关');return}
+    buildBricks();initRound();
+  }
+}
+
+// ===== 鼠标 =====
+ca.addEventListener('mousemove',e=>{
+  if(st!=='playing')return;
+  const rect=ca.getBoundingClientRect();
+  padX=Math.max(padW/2,Math.min(W-padW/2,(e.clientX-rect.left)*(W/rect.width)));
+});
+
+ca.addEventListener('click',()=>{
+  if(st==='playing'&&!ballLaunched)knockBall();
+});
+
+// ===== 键盘 =====
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(st==='playing')gameOver('退出');
+    else if(st==='gameover')quitToTitle();
+    return;
+  }
+  if(e.key===' '||e.code==='Space'){
+    e.preventDefault();
+    if(st==='playing'&&!ballLaunched)knockBall();
+  }
+});
+
+// ===== 按钮 =====
+document.getElementById('bs').addEventListener('click',start);
+document.getElementById('rb').addEventListener('click',start);
+document.getElementById('rq').addEventListener('click',quitToTitle);
+
+function gameLoop(){
+  fc++;update();render();
+  requestAnimationFrame(gameLoop);
+}
+
+buildBricks();initRound();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

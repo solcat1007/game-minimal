@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>棋影 — 黑白翻转棋</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{background:#fff;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'STKaiti','KaiTi','楷体',sans-serif;user-select:none}
+#gc{position:relative;width:700px;height:620px;border:1px solid #111}
+canvas{display:block}
+#ol{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;pointer-events:none;z-index:10}
+#ol.on{pointer-events:auto}
+#ts .gt{font-size:44px;color:#111;letter-spacing:10px;margin-bottom:8px}
+#ts .st{font-size:13px;color:#666;letter-spacing:2px;line-height:2.2}
+.btn{padding:10px 40px;font-size:15px;background:#fff;color:#111;border:1px solid #111;cursor:pointer;font-family:inherit;letter-spacing:4px;transition:all .2s;margin-top:12px}
+.btn:hover{background:#111;color:#fff}
+#gos{display:none;flex-direction:column;align-items:center;gap:8px}
+#gos .got{font-size:26px;color:#111;letter-spacing:4px}
+#gos .gosc{font-size:15px;color:#333}
+@media(max-width:720px){#gc{width:100vw;height:88vw;max-height:100vh}}
+</style>
+</head>
+<body>
+<div id="gc">
+<canvas id="c"></canvas>
+<div id="ol" class="on">
+<div id="ts">
+<div class="gt">棋 影</div>
+<div class="st">
+落子于空格，翻转夹住的对方棋子<br>
+黑先白后 · 无子可下时跳过回合<br>
+<span style="color:#111">Esc</span> 退出
+</div>
+<button class="btn" id="bs">开 始</button>
+</div>
+<div id="gos">
+<div class="got" id="fs"></div>
+<div class="gosc" id="scs"></div>
+<button class="btn" id="rb">再 来</button><button class="btn" id="rq" style="color:#888;border-color:#ccc">返回标题</button>
+</div>
+</div>
+</div>
+<script>
+const W=700,H=620;
+const ca=document.getElementById('c'),cx=ca.getContext('2d');
+ca.width=W;ca.height=H;
+
+const N=8,CELL=60,OX=110,OY=60;
+let board=[],turn=0,st='title',fc=0,passCount=0,lastMove=null;
+const DIRS=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+
+function initBoard(){
+  board=Array.from({length:N},()=>Array(N).fill(0));
+  board[3][3]=1;board[3][4]=2;board[4][3]=2;board[4][4]=1;
+  turn=0;passCount=0;lastMove=null;
+}
+
+function countPieces(){
+  let b=0,w=0;
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){if(board[r][c]===1)b++;else if(board[r][c]===2)w++}
+  return{b,w};
+}
+
+function getFlippable(r,c,player){
+  if(board[r][c]!==0)return[];
+  const opp=player===1?2:1;
+  const flips=[];
+  for(const[dr,dc]of DIRS){
+    const line=[];
+    let nr=r+dr,nc=c+dc;
+    while(nr>=0&&nr<N&&nc>=0&&nc<N&&board[nr][nc]===opp){line.push([nr,nc]);nr+=dr;nc+=dc}
+    if(line.length>0&&nr>=0&&nr<N&&nc>=0&&nc<N&&board[nr][nc]===player)flips.push(...line);
+  }
+  return flips;
+}
+
+function getValidMoves(player){
+  const moves=[];
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    if(board[r][c]!==0)continue;
+    if(getFlippable(r,c,player).length>0)moves.push({r,c});
+  }
+  return moves;
+}
+
+function makeMove(r,c,player){
+  const flips=getFlippable(r,c,player);
+  if(flips.length===0)return false;
+  board[r][c]=player;
+  for(const[fr,fc]of flips)board[fr][fc]=player;
+  lastMove={r,c};
+  passCount=0;
+  return true;
+}
+
+function aiMove(){
+  const moves=getValidMoves(2);
+  if(moves.length===0)return false;
+  let best=null,bestFlips=-1;
+  for(const m of moves){
+    const flips=getFlippable(m.r,m.c,2).length;
+    const cornerBonus=((m.r===0||m.r===N-1)&&(m.c===0||m.c===N-1))?25:0;
+    const edgeBonus=(m.r===0||m.r===N-1||m.c===0||m.c===N-1)?5:0;
+    const score=flips+cornerBonus+edgeBonus;
+    if(score>bestFlips){bestFlips=score;best=m}
+  }
+  if(best)makeMove(best.r,best.c,2);
+  return true;
+}
+
+function switchTurn(){
+  turn=turn===0?1:0;
+  const player=turn===0?1:2;
+  const moves=getValidMoves(player);
+  if(moves.length===0){
+    passCount++;
+    const oppMoves=getValidMoves(player===1?2:1);
+    if(oppMoves.length===0||passCount>=2){endGame();return;}
+    turn=turn===0?1:0;
+  }
+  if(turn===1){
+    setTimeout(()=>{
+      if(st!=='playing')return;
+      if(aiMove()){passCount=0;}
+      switchTurn();
+    },350);
+  }
+}
+
+function endGame(){
+  const{b,w}=countPieces();
+  let ttl,sub;
+  if(b>w){ttl='黑胜';sub='黑子 '+b+' · 白子 '+w}
+  else if(w>b){ttl='白胜';sub='黑子 '+b+' · 白子 '+w}
+  else{ttl='平局';sub='黑白各 '+b+' 子'}
+  st='gameover';
+  document.getElementById('fs').textContent=ttl;
+  document.getElementById('scs').textContent=sub;
+  document.getElementById('gos').style.display='flex';
+  document.getElementById('ol').classList.add('on');
+}
+
+function getCell(mx,my){
+  const c=Math.floor((mx-OX)/CELL),r=Math.floor((my-OY)/CELL);
+  if(r>=0&&r<N&&c>=0&&c<N)return{r,c};
+  return null;
+}
+
+function render(){
+  cx.fillStyle='#fff';cx.fillRect(0,0,W,H);
+
+  // 棋盘背景
+  cx.fillStyle='#fafafa';cx.fillRect(OX-8,OY-8,CELL*N+16,CELL*N+16);
+
+  // 网格线
+  cx.strokeStyle='#111';cx.lineWidth=1.5;
+  for(let i=0;i<=N;i++){
+    cx.beginPath();cx.moveTo(OX,OY+i*CELL);cx.lineTo(OX+N*CELL,OY+i*CELL);cx.stroke();
+    cx.beginPath();cx.moveTo(OX+i*CELL,OY);cx.lineTo(OX+i*CELL,OY+N*CELL);cx.stroke();
+  }
+
+  // 星位
+  const dots=[[2,2],[2,6],[6,2],[6,6]];
+  for(const[dr,dc]of dots){
+    cx.beginPath();cx.arc(OX+dc*CELL,OY+dr*CELL,3,0,Math.PI*2);cx.fillStyle='#111';cx.fill();
+  }
+
+  // 棋子
+  for(let r=0;r<N;r++){
+    for(let c=0;c<N;c++){
+      if(board[r][c]===0)continue;
+      const cxPos=OX+c*CELL,cyPos=OY+r*CELL,radius=CELL/2-5;
+      cx.beginPath();cx.arc(cxPos,cyPos,radius,0,Math.PI*2);
+      cx.fillStyle=board[r][c]===1?'#111':'#fff';cx.fill();
+      cx.strokeStyle='#111';cx.lineWidth=1.5;cx.stroke();
+    }
+  }
+
+  // 合法落子提示
+  if(st==='playing'&&turn===0){
+    const moves=getValidMoves(1);
+    for(const m of moves){
+      cx.beginPath();cx.arc(OX+m.c*CELL,OY+m.r*CELL,4,0,Math.PI*2);
+      cx.fillStyle='rgba(0,0,0,.12)';cx.fill();
+    }
+  }
+
+  // 最后落子标记
+  if(lastMove){
+    const cxPos=OX+lastMove.c*CELL,cyPos=OY+lastMove.r*CELL,mk=board[lastMove.r][lastMove.c];
+    cx.beginPath();cx.arc(cxPos,cyPos,4,0,Math.PI*2);
+    cx.fillStyle=mk===1?'#fff':'#111';cx.fill();
+  }
+
+  // HUD
+  const{b,w}=countPieces();
+  cx.fillStyle='#111';cx.font='15px "STKaiti","楷体",serif';cx.textAlign='left';
+  cx.fillText('黑 ● '+b,16,H-30);
+  cx.textAlign='center';
+  cx.fillText(turn===0?'轮到 ● 黑':'轮到 ○ 白（思考中）',W/2,H-30);
+  cx.textAlign='right';cx.fillText('白 ○ '+w,W-16,H-30);
+
+  if(st==='title')drawTitleOverlay();
+}
+
+function drawTitleOverlay(){
+  for(let r=0;r<3;r++)for(let c=0;c<3;c++){
+    cx.globalAlpha=0.03+Math.sin(r*1.3+c+fc*.02)*0.02;
+    cx.beginPath();cx.arc(OX+(2+c)*CELL,OY+(2+r)*CELL,16,0,Math.PI*2);
+    cx.fillStyle=(r+c)%2===0?'#111':'#eee';cx.fill();
+  }cx.globalAlpha=1;
+}
+
+// ===== 鼠标 =====
+ca.addEventListener('click',e=>{
+  if(st!=='playing'||turn!==0)return;
+  const rect=ca.getBoundingClientRect();
+  const mx=(e.clientX-rect.left)*(W/rect.width),my=(e.clientY-rect.top)*(H/rect.height);
+  const cell=getCell(mx,my);
+  if(!cell)return;
+  const moves=getValidMoves(1);
+  const valid=moves.find(m=>m.r===cell.r&&m.c===cell.c);
+  if(!valid)return;
+  makeMove(cell.r,cell.c,1);
+  switchTurn();
+});
+
+// ===== 键盘 =====
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(st==='playing'){st='gameover';endGame();}
+    else if(st==='gameover')quitToTitle();
+    return;
+  }
+});
+
+// ===== 按钮 =====
+document.getElementById('bs').addEventListener('click',start);
+document.getElementById('rb').addEventListener('click',start);
+document.getElementById('rq').addEventListener('click',quitToTitle);
+
+function start(){
+  document.getElementById('ts').style.display='none';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('ol').classList.remove('on');
+  initBoard();st='playing';
+}
+
+function quitToTitle(){
+  st='title';initBoard();
+  document.getElementById('ts').style.display='block';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('ol').classList.add('on');
+}
+
+function gameLoop(){
+  fc++;render();
+  requestAnimationFrame(gameLoop);
+}
+
+initBoard();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>一笔禅 — 一笔画</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{background:#fff;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'STKaiti','KaiTi','楷体',sans-serif;user-select:none}
+#gc{position:relative;width:700px;height:600px;border:1px solid #111}
+canvas{display:block}
+#ol{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;pointer-events:none;z-index:10}
+#ol.on{pointer-events:auto}
+#ts .gt{font-size:48px;color:#111;letter-spacing:12px;margin-bottom:8px}
+#ts .st{font-size:13px;color:#666;letter-spacing:3px;line-height:2.2;margin-bottom:8px}
+.btn{padding:10px 40px;font-size:15px;background:#fff;color:#111;border:1px solid #111;cursor:pointer;font-family:inherit;letter-spacing:4px;transition:all .2s;margin-top:14px}
+.btn:hover{background:#111;color:#fff}
+#hic{display:none;color:#999;font-size:12px;letter-spacing:2px;margin-top:8px}
+#gos{display:none;flex-direction:column;align-items:center;gap:8px}
+#gos .got{font-size:26px;color:#111;letter-spacing:6px}
+#gos .gosc{font-size:15px;color:#333}
+@media(max-width:720px){#gc{width:100vw;height:85vw;max-height:100vh}}
+</style>
+</head>
+<body>
+<div id="gc">
+<canvas id="c"></canvas>
+<div id="ol" class="on">
+<div id="ts">
+<div class="gt">一 笔 禅</div>
+<div class="st">
+从●起点开始，一笔连完所有○节点，不重复经过<br>
+<span style="color:#111">Esc</span> 退出 · 鼠标拖拽连线
+</div>
+<div id="hic" style="display:block">提示：起点是黑色实心圆</div>
+<button class="btn" id="bs">开 始</button>
+</div>
+<div id="gos">
+<div class="got" id="fs"></div>
+<div class="gosc" id="scs"></div>
+<button class="btn" id="rb">再 来</button><button class="btn" id="rq" style="color:#888;border-color:#ccc">返回标题</button>
+</div>
+</div>
+</div>
+<script>
+const W=700,H=600;
+const ca=document.getElementById('c'),cx=ca.getContext('2d');
+ca.width=W;ca.height=H;
+
+let st='title',nodes=[],edges=[],nodeR=16,cnode=-1,path=[],drawOK=false,lv=1,maxLv=8,fc=0;
+let startNode=-1;
+let connectionMatrix=[]; // 邻接矩阵
+
+function generateLevel(n){
+  nodes=[];edges=[];path=[];cnode=-1;drawOK=false;startNode=-1;connectionMatrix=[];
+
+  const padding=80;
+  // 随机生成n个节点，但确保连通且是欧拉路径（半欧拉图 or 欧拉图）
+
+  // 简化方案：生成节点位置，然后构建生成树保证连通，再添加一些边
+  const positions=[];
+  const attempts=0;
+  const minDist=90;
+
+  for(let i=0;i<n;i++){
+    let px,py,ok;
+    for(let t=0;t<100;t++){
+      px=padding+Math.random()*(W-2*padding);
+      py=padding+Math.random()*(H-2*padding);
+      ok=true;
+      for(const p of positions){
+        const dx=px-p.x,dy=py-p.y;
+        if(Math.sqrt(dx*dx+dy*dy)<minDist){ok=false;break}
+      }
+      if(ok)break;
+    }
+    if(!ok){px=padding+Math.random()*(W-2*padding);py=padding+Math.random()*(H-2*padding)}
+    positions.push({x:px,y:py});
+  }
+
+  // 构建连通图：先做最小生成树（Prim-like，连接每个节点到最近已连接节点）
+  const adj=Array.from({length:n},()=>Array(n).fill(0));
+  const connected=new Set([0]);
+
+  while(connected.size<n){
+    let bestD=Infinity,bestU=-1,bestV=-1;
+    for(const u of connected){
+      for(let v=0;v<n;v++){
+        if(connected.has(v))continue;
+        const dx=positions[u].x-positions[v].x,dy=positions[u].y-positions[v].y;
+        const d=Math.sqrt(dx*dx+dy*dy);
+        if(d<bestD){bestD=d;bestU=u;bestV=v}
+      }
+    }
+    adj[bestU][bestV]=adj[bestV][bestU]=1;
+    connected.add(bestV);
+  }
+
+  // 添加额外边（20%概率每对非相邻节点），确保路径多样性
+  for(let i=0;i<n;i++){
+    for(let j=i+1;j<n;j++){
+      if(adj[i][j])continue;
+      if(Math.random()<0.2+lv*0.03){
+        const dx=positions[i].x-positions[j].x,dy=positions[i].y-positions[j].y;
+        if(Math.sqrt(dx*dx+dy*dy)<200)adj[i][j]=adj[j][i]=1;
+      }
+    }
+  }
+
+  // 计算各节点度数，确保欧拉路径存在（最多两个奇数度节点）
+  const deg=adj.map((row,i)=>row.reduce((s,v)=>s+v,0));
+  const oddNodes=deg.map((d,i)=>d%2===1?i:-1).filter(i=>i>=0);
+
+  // 如果奇数度节点多于2个，随机配对添加边
+  while(oddNodes.length>2){
+    const a=oddNodes.pop(),b=oddNodes.pop();
+    adj[a][b]=adj[b][a]=1;
+  }
+
+  // 重新计算度
+  const deg2=adj.map((row,i)=>row.reduce((s,v)=>s+v,0));
+  const oddNodes2=deg2.map((d,i)=>d%2===1?i:-1).filter(i=>i>=0);
+
+  // 设置为起点（如果有奇数度节点则以它为起点，否则随机）
+  startNode=oddNodes2.length>0?oddNodes2[0]:Math.floor(Math.random()*n);
+
+  // 构建边列表（用于绘制）
+  const edgeSet=new Set();
+  for(let i=0;i<n;i++){
+    for(let j=i+1;j<n;j++){
+      if(adj[i][j])edgeSet.add(`${Math.min(i,j)}-${Math.max(i,j)}`);
+    }
+  }
+
+  for(const e of edgeSet){
+    const [a,b]=e.split('-').map(Number);
+    const dx=positions[a].x-positions[b].x,dy=positions[a].y-positions[b].y;
+    edges.push({a,b,dist:Math.sqrt(dx*dx+dy*dy)});
+  }
+
+  nodes=positions;connectionMatrix=adj;
+}
+
+function getNearNode(mx,my){
+  let best=-1,bestD=Infinity;
+  for(let i=0;i<nodes.length;i++){
+    const dx=mx-nodes[i].x,dy=my-nodes[i].y;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    if(d<nodeR+10&&d<bestD){best=i;bestD=d}
+  }
+  return best;
+}
+
+function render(){
+  cx.fillStyle='#fff';cx.fillRect(0,0,W,H);
+
+  // 网格
+  cx.strokeStyle='#f5f5f5';cx.lineWidth=.5;
+  for(let x=0;x<W;x+=30){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke()}
+  for(let y=0;y<H;y+=30){cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke()}
+
+  // 边
+  for(const e of edges){
+    let inPath=false;
+    for(let i=0;i<path.length-1;i++){
+      if((path[i]===e.a&&path[i+1]===e.b)||(path[i]===e.b&&path[i+1]===e.a)){inPath=true;break}
+    }
+    const a=nodes[e.a],b=nodes[e.b];
+    cx.beginPath();cx.moveTo(a.x,a.y);cx.lineTo(b.x,b.y);
+    cx.strokeStyle=inPath?'#111':'#ddd';cx.lineWidth=inPath?2.5:1;
+    cx.stroke();
+  }
+
+  // 当前拖拽线
+  if(cnode>=0&&!path.includes(cnode)){
+    cx.beginPath();cx.moveTo(nodes[path[path.length-1]].x,nodes[path[path.length-1]].y);
+    cx.lineTo(nodes[cnode].x,nodes[cnode].y);
+    cx.strokeStyle='#aaa';cx.lineWidth=1.5;cx.setLineDash([6,4]);cx.stroke();cx.setLineDash([]);
+  }
+
+  // 节点
+  for(let i=0;i<nodes.length;i++){
+    const p=nodes[i],inP=path.includes(i);
+    // 外圈
+    cx.beginPath();cx.arc(p.x,p.y,nodeR,0,Math.PI*2);
+    cx.fillStyle=inP?'#111':'#fff';
+    cx.fill();
+    cx.strokeStyle='#111';cx.lineWidth=inP?2:1.5;
+    cx.stroke();
+
+    // 起点标记
+    if(i===startNode){
+      cx.beginPath();cx.arc(p.x,p.y,nodeR-5,0,Math.PI*2);
+      cx.fillStyle='#111';cx.fill();
+    }
+
+    // 悬停高亮
+    if(i===cnode&&!inP){
+      cx.beginPath();cx.arc(p.x,p.y,nodeR+4,0,Math.PI*2);
+      cx.strokeStyle='rgba(0,0,0,.2)';cx.lineWidth=2;
+      cx.stroke();
+    }
+  }
+
+  // HUD
+  if(st==='playing'){
+    cx.fillStyle='#111';cx.font='15px "STKaiti","楷体",serif';cx.textAlign='left';
+    cx.fillText(`第 ${lv} / ${maxLv} 关`,16,32);
+    cx.textAlign='right';cx.fillText(`${nodes.length} 节点`,W-16,32);
+  }
+
+  if(st==='title')drawTitleOverlay();
+}
+
+function drawTitleOverlay(){
+  // 水墨飞字装饰
+  const chars=['一','禅','画','道','空','无','悟'];
+  for(let i=0;i<chars.length;i++){
+    cx.fillStyle=`rgba(0,0,0,${0.04+Math.sin(i+fc*.02)*0.02})`;
+    cx.font=`${30+Math.abs(Math.sin(i*1.3+fc*.015))*12}px "STKaiti","楷体",serif`;
+    cx.textAlign='center';cx.fillText(chars[i],80+i*90,260+Math.sin(i+fc*.01)*40);
+  }
+}
+
+function winLevel(){
+  drawOK=false;
+  lv++;
+  if(lv>maxLv){
+    st='gameover';
+    document.getElementById('fs').textContent='一笔通禅';
+    document.getElementById('scs').textContent=`通过全部 ${maxLv} 关`;
+    document.getElementById('gos').style.display='flex';
+    document.getElementById('ol').classList.add('on');
+    return;
+  }
+  const totalNodes=Math.min(4+lv,10);
+  generateLevel(totalNodes);
+}
+
+function gameOver(msg){
+  st='gameover';
+  document.getElementById('fs').textContent=msg||'未完成';
+  document.getElementById('scs').textContent=`止步第 ${lv} 关`;
+  document.getElementById('gos').style.display='flex';
+  document.getElementById('ol').classList.add('on');
+}
+
+// ===== 鼠标事件 =====
+ca.addEventListener('mousedown',e=>{
+  if(st!=='playing')return;
+  const rect=ca.getBoundingClientRect();
+  const mx=(e.clientX-rect.left)*(W/rect.width),my=(e.clientY-rect.top)*(H/rect.height);
+  const n=getNearNode(mx,my);
+  if(n>=0&&path.length===0){
+    // 必须从起点开始
+    if(n===startNode){path=[n];drawOK=false}
+  }else if(n>=0&&path.length>0&&!path.includes(n)){
+    // 检查是否与上一个节点相邻
+    const prev=path[path.length-1];
+    if(connectionMatrix[prev][n]){
+      path.push(n);
+      if(path.length===nodes.length){
+        // 所有节点访问完毕
+        setTimeout(()=>winLevel(),500);
+      }
+    }
+  }
+});
+
+ca.addEventListener('mousemove',e=>{
+  if(st!=='playing')return;
+  const rect=ca.getBoundingClientRect();
+  const mx=(e.clientX-rect.left)*(W/rect.width),my=(e.clientY-rect.top)*(H/rect.height);
+  cnode=getNearNode(mx,my);
+  // 只在可连接的节点时高亮
+  if(cnode>=0&&path.length>0&&path.includes(cnode))cnode=-1;
+});
+
+ca.addEventListener('mouseleave',()=>{cnode=-1});
+
+// ===== 键盘 =====
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(st==='playing'){gameOver('已放弃');drawTitleOverlay()}
+    else if(st==='gameover')quitToTitle();
+    return;
+  }
+  if(e.key==='u'||e.key==='U'){
+    if(st==='playing'&&path.length>0)path.pop();
+  }
+});
+
+// ===== 按钮 =====
+document.getElementById('bs').addEventListener('click',start);
+document.getElementById('rb').addEventListener('click',start);
+document.getElementById('rq').addEventListener('click',quitToTitle);
+
+function start(){
+  document.getElementById('ts').style.display='none';
+  document.getElementById('hic').style.display='block';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('ol').classList.remove('on');
+  lv=1;path=[];cnode=-1;drawOK=false;
+  generateLevel(4+lv); // 第一关5个节点
+  st='playing';
+}
+
+function quitToTitle(){
+  st='title';path=[];nodes=[];edges=[];cnode=-1;
+  document.getElementById('ts').style.display='block';
+  document.getElementById('hic').style.display='block';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('ol').classList.add('on');
+}
+
+function gameLoop(){
+  fc++;
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+generateLevel(5); // 初始展示
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

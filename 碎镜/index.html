@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>碎镜 — 极简拼图</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{background:#fff;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'STKaiti','KaiTi','楷体',sans-serif;user-select:none}
+#gc{position:relative;width:700px;height:620px;border:1px solid #111}
+canvas{display:block}
+#ol{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;pointer-events:none;z-index:10}
+#ol.on{pointer-events:auto}
+#ts .gt{font-size:44px;color:#111;letter-spacing:10px;margin-bottom:8px}
+#ts .st{font-size:13px;color:#666;letter-spacing:2px;line-height:2.2}
+.btn{padding:10px 40px;font-size:15px;background:#fff;color:#111;border:1px solid #111;cursor:pointer;font-family:inherit;letter-spacing:4px;transition:all .2s;margin-top:12px}
+.btn:hover{background:#111;color:#fff}
+#gos{display:none;flex-direction:column;align-items:center;gap:8px}
+#gos .got{font-size:26px;color:#111;letter-spacing:4px}
+#gos .gosc{font-size:15px;color:#333}
+@media(max-width:720px){#gc{width:100vw;height:88vw;max-height:100vh}}
+</style>
+</head>
+<body>
+<div id="gc">
+<canvas id="c"></canvas>
+<div id="ol" class="on">
+<div id="ts">
+<div class="gt">碎 镜</div>
+<div class="st">
+点击两块碎片交换位置，拼回完整图案<br>
+网格逐渐增大 · 右上角可参考原图<br>
+<span style="color:#111">Esc</span> 退出
+</div>
+<button class="btn" id="bs">开 始</button>
+</div>
+<div id="gos">
+<div class="got" id="fs"></div>
+<div class="gosc" id="scs"></div>
+<button class="btn" id="rb">再 来</button><button class="btn" id="rq" style="color:#888;border-color:#ccc">返回标题</button>
+</div>
+</div>
+</div>
+<script>
+const W=700,H=620;
+const ca=document.getElementById('c'),cx=ca.getContext('2d');
+ca.width=W;ca.height=H;
+
+let st='title',fc=0,grid=3,lv=1,maxLv=6;
+let pieces=[],selIdx=-1,moves=0,elapsed=0,timer=null;
+let targetCanvas=null,pieceSize=0,boardOX=0,boardOY=0,boardS=420;
+
+function genPattern(cvs,sz){
+  const x=cvs.getContext('2d');
+  x.fillStyle='#fff';x.fillRect(0,0,sz,sz);
+  const seed=lv*137+Math.floor(Math.random()*999);
+  function rng(){seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff}
+
+  // 大的黑色形状
+  x.fillStyle='#111';
+  x.beginPath();x.arc(sz*rng(),sz*rng(),sz*(.12+rng()*.2),0,Math.PI*2);x.fill();
+  x.beginPath();x.arc(sz*rng(),sz*rng(),sz*(.1+rng()*.18),0,Math.PI*2);x.fill();
+
+  // 线条
+  for(let i=0;i<4;i++){
+    x.beginPath();x.moveTo(sz*rng(),sz*rng());x.lineTo(sz*rng(),sz*rng());
+    x.strokeStyle='#111';x.lineWidth=.5+rng()*3;x.stroke();
+  }
+
+  // 空心圆
+  for(let i=0;i<6;i++){
+    x.beginPath();x.arc(sz*rng(),sz*rng(),sz*(.04+rng()*.12),0,Math.PI*2);
+    x.strokeStyle='#111';x.lineWidth=.5+rng()*2;x.stroke();
+  }
+
+  // 小圆点
+  for(let i=0;i<12;i++){
+    x.beginPath();x.arc(sz*rng(),sz*rng(),sz*(.01+rng()*.03),0,Math.PI*2);
+    x.fillStyle='#111';x.fill();
+  }
+}
+
+function initLevel(){
+  pieces=[];
+  targetCanvas=document.createElement('canvas');
+  targetCanvas.width=boardS;targetCanvas.height=boardS;
+  genPattern(targetCanvas,boardS);
+
+  pieceSize=boardS/grid;
+  boardOX=(W-boardS-60)/2;boardOY=(H-boardS)/2;
+  const indices=[];
+  for(let i=0;i<grid*grid;i++)indices.push(i);
+
+  // 打乱(确保未解)
+  let attempts=0;
+  while(attempts<200){
+    for(let i=indices.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [indices[i],indices[j]]=[indices[j],indices[i]];
+    }
+    const solved=indices.every((v,i)=>v===i);
+    if(!solved)break;
+    attempts++;
+  }
+
+  pieces=indices.map((targetIdx,i)=>({targetIdx,currentIdx:i}));
+  selIdx=-1;moves=0;elapsed=0;
+  if(timer)clearInterval(timer);
+  timer=setInterval(()=>{elapsed++},1000);
+}
+
+function swap(a,b){
+  const pa=pieces.find(p=>p.currentIdx===a);
+  const pb=pieces.find(p=>p.currentIdx===b);
+  if(!pa||!pb)return;
+  [pa.currentIdx,pb.currentIdx]=[pb.currentIdx,pa.currentIdx];
+  moves++;
+
+  // 检查是否完成
+  const solved=pieces.every(p=>p.targetIdx===p.currentIdx);
+  if(solved){winLevel()}
+}
+
+function winLevel(){
+  clearInterval(timer);timer=null;
+  lv++;
+  if(lv>maxLv){
+    st='gameover';
+    const stars=moves<grid*grid*5?3:moves<grid*grid*10?2:1;
+    document.getElementById('fs').textContent='镜圆';
+    document.getElementById('scs').textContent='全部 '+maxLv+' 关通关 · 最后一关 '+moves+' 步';
+    document.getElementById('gos').style.display='flex';
+    document.getElementById('ol').classList.add('on');
+    return;
+  }
+  grid=lv+2; // 3,4,5,6,7,8
+  initLevel();
+}
+
+function getCell(mx,my){
+  const c=Math.floor((mx-boardOX)/pieceSize);
+  const r=Math.floor((my-boardOY)/pieceSize);
+  if(r>=0&&r<grid&&c>=0&&c<grid)return r*grid+c;
+  return -1;
+}
+
+function render(){
+  cx.fillStyle='#fff';cx.fillRect(0,0,W,H);
+
+  // 棋盘底色和网格
+  cx.fillStyle='#fafafa';
+  cx.fillRect(boardOX-2,boardOY-2,boardS+4,boardS+4);
+
+  // 原图预览
+  const prevX=boardOX+boardS+16,prevY=boardOY,prevS=56;
+  cx.drawImage(targetCanvas,prevX,prevY,prevS,prevS);
+  cx.strokeStyle='#999';cx.lineWidth=.5;
+  cx.strokeRect(prevX,prevY,prevS,prevS);
+  cx.fillStyle='#999';cx.font='10px sans-serif';cx.textAlign='center';
+  cx.fillText('原图',prevX+prevS/2,prevY+prevS+14);
+
+  // 碎片
+  for(const p of pieces){
+    const ci=p.currentIdx%grid,ri=Math.floor(p.currentIdx/grid);
+    const ti=p.targetIdx%grid,tri=Math.floor(p.targetIdx/grid);
+    const dx=boardOX+ci*pieceSize,dy=boardOY+ri*pieceSize;
+    const sx=ti*pieceSize,sy=tri*pieceSize;
+
+    cx.drawImage(targetCanvas,sx,sy,pieceSize,pieceSize,dx,dy,pieceSize,pieceSize);
+
+    // 边框
+    cx.strokeStyle='#fff';cx.lineWidth=1.5;
+    cx.strokeRect(dx+.5,dy+.5,pieceSize-1,pieceSize-1);
+
+    // 选中高亮
+    if(p.currentIdx===selIdx){
+      cx.strokeStyle='#111';cx.lineWidth=3;
+      cx.strokeRect(dx-1,dy-1,pieceSize+2,pieceSize+2);
+    }
+  }
+
+  // 网格线
+  cx.strokeStyle='#111';cx.lineWidth=1;
+  for(let i=0;i<=grid;i++){
+    cx.beginPath();cx.moveTo(boardOX,boardOY+i*pieceSize);cx.lineTo(boardOX+boardS,boardOY+i*pieceSize);cx.stroke();
+    cx.beginPath();cx.moveTo(boardOX+i*pieceSize,boardOY);cx.lineTo(boardOX+i*pieceSize,boardOY+boardS);cx.stroke();
+  }
+
+  // HUD
+  cx.fillStyle='#111';cx.font='15px "STKaiti","楷体",serif';cx.textAlign='left';
+  cx.fillText('第 '+lv+'/'+maxLv+' 关 · '+grid+'×'+grid,16,30);
+  cx.textAlign='right';
+  cx.fillText('步数 '+moves+' · '+elapsed+'s',W-16,30);
+
+  if(st==='title')drawTitleOverlay();
+}
+
+function drawTitleOverlay(){
+  cx.globalAlpha=.05+Math.sin(fc*.015)*.02;
+  for(let i=0;i<9;i++){
+    cx.beginPath();cx.arc(W/2+Math.cos(i*1.2)*80,H/2+Math.sin(i*1.2)*80,6,0,Math.PI*2);
+    cx.fillStyle='#111';cx.fill();
+  }cx.globalAlpha=1;
+}
+
+// ===== 鼠标 =====
+ca.addEventListener('click',e=>{
+  if(st!=='playing')return;
+  const rect=ca.getBoundingClientRect();
+  const mx=(e.clientX-rect.left)*(W/rect.width);
+  const my=(e.clientY-rect.top)*(H/rect.height);
+  const idx=getCell(mx,my);
+  if(idx<0)return;
+  if(selIdx<0){selIdx=idx}
+  else if(selIdx===idx){selIdx=-1}
+  else{swap(selIdx,idx);selIdx=-1}
+});
+
+// ===== 键盘 =====
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(st==='playing'){clearInterval(timer);st='gameover';gameOverEarly()}
+    else if(st==='gameover')quitToTitle();
+    return;
+  }
+});
+
+function gameOverEarly(){
+  st='gameover';
+  document.getElementById('fs').textContent='未完成';
+  document.getElementById('scs').textContent='止步第 '+lv+' 关 · '+moves+' 步';
+  document.getElementById('gos').style.display='flex';
+  document.getElementById('ol').classList.add('on');
+}
+
+// ===== 按钮 =====
+document.getElementById('bs').addEventListener('click',start);
+document.getElementById('rb').addEventListener('click',start);
+document.getElementById('rq').addEventListener('click',quitToTitle);
+
+function start(){
+  document.getElementById('ts').style.display='none';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('ol').classList.remove('on');
+  lv=1;grid=lv+2;initLevel();st='playing';
+}
+
+function quitToTitle(){
+  st='title';if(timer)clearInterval(timer);timer=null;
+  document.getElementById('ts').style.display='block';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('ol').classList.add('on');
+}
+
+function gameLoop(){
+  fc++;render();
+  requestAnimationFrame(gameLoop);
+}
+
+initLevel();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
