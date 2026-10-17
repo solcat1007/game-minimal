@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>墨涌 — 极简躲避</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{background:#fff;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'STKaiti','KaiTi','楷体','SimSun','宋体',serif;user-select:none}
+#gc{position:relative;width:800px;height:600px;border:1px solid #111}
+canvas{display:block}
+#ol{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;pointer-events:none;z-index:10}
+#ol.on{pointer-events:auto}
+#ts{text-align:center}
+#ts .gt{font-size:64px;color:#111;letter-spacing:16px;margin-bottom:12px}
+#ts .st{font-size:13px;color:#666;letter-spacing:3px;line-height:2.2}
+#ts .kw{color:#111;font-weight:bold}
+.btn{padding:12px 48px;font-size:16px;background:#fff;color:#111;border:1px solid #111;cursor:pointer;font-family:inherit;letter-spacing:4px;transition:all .2s;margin-top:28px}
+.btn:hover{background:#111;color:#fff}
+#gos{display:none;flex-direction:column;align-items:center;gap:10px}
+#gos .got{font-size:32px;color:#111;letter-spacing:6px}
+#gos .gosc{font-size:20px;color:#333}
+#gos .gost{font-size:13px;color:#888;letter-spacing:2px;max-width:360px;text-align:center;line-height:1.7}
+#gos .gosd{font-size:11px;color:#bbb;text-align:center}
+#pause{position:absolute;top:16px;right:20px;z-index:11;display:none}
+#pause button{font-size:12px;padding:4px 14px;background:#fff;color:#888;border:1px solid #ccc;cursor:pointer;font-family:inherit;letter-spacing:2px;transition:all .2s}
+#pause button:hover{color:#111;border-color:#111}
+#paused{position:absolute;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;justify-content:center;align-items:center;z-index:20;background:rgba(255,255,255,.9)}
+#paused.on{display:flex}
+#paused .pt{font-size:36px;color:#111;letter-spacing:12px;margin-bottom:20px}
+@media(max-width:820px){#gc{width:100vw;height:75vw;max-height:100vh}}
+</style>
+</head>
+<body>
+<div id="gc">
+<canvas id="c"></canvas>
+<div id="pause"><button id="pb">暂停</button></div>
+<div id="paused"><div class="pt">暂停</div><button class="btn" id="pr">继续</button><button class="btn" id="pq" style="margin-top:8px;color:#888;border-color:#ccc">退出</button></div>
+<div id="ol" class="on">
+<div id="ts">
+<div class="gt">墨 涌</div>
+<div class="st">
+<span class="kw">鼠标移动</span> 控制墨核 · <span class="kw">Esc</span> 退出<br>
+躲避涌来的墨滴，<span class="kw">金墨</span>可保短暂安宁<br>
+双击画面也可退出
+</div>
+<button class="btn" id="bs">入 墨</button>
+</div>
+<div id="gos">
+<div class="got" id="fs"></div>
+<div class="gosc" id="scs"></div>
+<div class="gost" id="stt"></div>
+<div class="gosd" id="sdd"></div>
+<button class="btn" id="rb">再 入</button>
+<button class="btn" id="rq" style="margin-top:6px;color:#888;border-color:#ccc">返回标题</button>
+</div>
+</div>
+</div>
+<script>
+const W=800,H=600;
+const ca=document.getElementById('c'),cx=ca.getContext('2d');
+ca.width=W;ca.height=H;
+
+// ===== 状态 =====
+let st='title'; // title | playing | paused | gameover
+let sc=0,fc=0,mx=W/2,my=H/2;
+let pl={x:W/2,y:H/2,r:7,glow:0};
+let inks=[],goldInks=[],pts=[];
+let spawnT=0,spawnIv=60,diff=1;
+let slowT=0;
+let bestSc=parseInt(localStorage.getItem('moyong_best')||'0');
+let mouseOnCanvas=false;
+
+// ===== 音效 =====
+const ac=typeof AudioContext!=='undefined'?new AudioContext():null;
+function beep(f,d){
+  if(!ac)return;try{const o=ac.createOscillator(),g=ac.createGain();o.type='sine';o.frequency.value=f;g.gain.value=.04;g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+d);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}
+}
+
+// ===== 墨滴 =====
+class Ink{
+  constructor(){
+    this.r=4+Math.random()*9*diff;
+    const e=Math.floor(Math.random()*4);
+    if(e===0){this.x=Math.random()*W;this.y=-this.r}
+    else if(e===1){this.x=W+this.r;this.y=Math.random()*H}
+    else if(e===2){this.x=Math.random()*W;this.y=H+this.r}
+    else{this.x=-this.r;this.y=Math.random()*H}
+    // 瞄准玩家附近 ±30% 画幅偏移（不再精准追踪）
+    const ox=(Math.random()-.5)*W*.3,oy=(Math.random()-.5)*H*.3;
+    const ang=Math.atan2(pl.y+oy-this.y,pl.x+ox-this.x);
+    const sp=.7+Math.random()*1.6*diff;
+    this.vx=Math.cos(ang)*sp;this.vy=Math.sin(ang)*sp;
+    this.alpha=1;
+  }
+  up(slowed){
+    const m=slowed?.4:1;this.x+=this.vx*m;this.y+=this.vy*m;
+  }
+  gone(){return this.x<-80||this.x>W+80||this.y<-80||this.y>H+80}
+  hit(px,py,pr){
+    const dx=px-this.x,dy=py-this.y;
+    return Math.sqrt(dx*dx+dy*dy)<pr+this.r;
+  }
+  draw(){
+    cx.save();cx.globalAlpha=this.alpha;
+    const g=cx.createRadialGradient(this.x,this.y,0,this.x,this.y,this.r);
+    g.addColorStop(0,'#000');g.addColorStop(.7,'#222');g.addColorStop(1,'rgba(0,0,0,0)');
+    cx.fillStyle=g;cx.beginPath();cx.arc(this.x,this.y,this.r,0,Math.PI*2);cx.fill();
+    cx.restore();
+  }
+}
+
+// ===== 金墨 =====
+class GoldInk{
+  constructor(){
+    const e=Math.floor(Math.random()*4);
+    if(e===0){this.x=Math.random()*W;this.y=-12}
+    else if(e===1){this.x=W+12;this.y=Math.random()*H}
+    else if(e===2){this.x=Math.random()*W;this.y=H+12}
+    else{this.x=-12;this.y=Math.random()*H}
+    this.r=6;this.life=450;
+    const ang=Math.atan2(pl.y-this.y,pl.x-this.x);
+    this.vx=Math.cos(ang)*.8;this.vy=Math.sin(ang)*.8;
+  }
+  up(){this.x+=this.vx;this.y+=this.vy;this.life--}
+  gone(){return this.life<=0||this.x<-40||this.x>W+40||this.y<-40||this.y>H+40}
+  hit(px,py,pr){
+    const dx=px-this.x,dy=py-this.y;
+    return Math.sqrt(dx*dx+dy*dy)<pr+this.r+6;
+  }
+  draw(){
+    cx.save();const gl=.5+Math.sin(this.life*.08)*.3;
+    const g=cx.createRadialGradient(this.x,this.y,0,this.x,this.y,14);
+    g.addColorStop(0,`rgba(200,160,40,${gl+.2})`);
+    g.addColorStop(.5,`rgba(180,140,30,${gl*.4})`);
+    g.addColorStop(1,'rgba(200,160,40,0)');
+    cx.fillStyle=g;cx.beginPath();cx.arc(this.x,this.y,14,0,Math.PI*2);cx.fill();
+    cx.fillStyle='#b8860b';cx.beginPath();cx.arc(this.x,this.y,this.r,0,Math.PI*2);cx.fill();
+    cx.restore();
+  }
+}
+
+// ===== 粒子 =====
+function spP(x,y,n){
+  for(let i=0;i<n;i++)pts.push({x,y,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,life:12+Math.random()*12,ml:24,sz:1+Math.random()*3});
+}
+
+// ===== 主循环 =====
+function loop(){
+  fc++;
+  if(st==='title'){drawTitle();requestAnimationFrame(loop);return}
+  if(st==='paused'){requestAnimationFrame(loop);return}
+  if(st==='gameover'){drawGameOverBG();requestAnimationFrame(loop);return}
+
+  // 难度
+  diff=1+Math.floor(sc/30)*.1;
+  spawnIv=Math.max(24,60-Math.floor(sc/15)*2);
+
+  // 减速
+  if(slowT>0)slowT--;
+
+  // 生成墨滴
+  spawnT++;if(spawnT>spawnIv){spawnT=0;inks.push(new Ink());if(sc>15&&Math.random()<.25)inks.push(new Ink())}
+  // 金墨
+  if(fc%350===0&&Math.random()<.45)goldInks.push(new GoldInk());
+
+  // 玩家移动
+  pl.x+=(mx-pl.x)*.14;pl.y+=(my-pl.y)*.14;
+  pl.glow=Math.sin(fc*.08)*.3+.7;
+
+  // 更新
+  for(const ink of inks)ink.up(slowT>0);
+  for(const gi of goldInks)gi.up();
+
+  // 碰撞 — 墨滴
+  for(let i=inks.length-1;i>=0;i--){
+    if(inks[i].gone()){inks.splice(i,1);continue}
+    if(inks[i].hit(pl.x,pl.y,pl.r)){
+      if(slowT>0){inks.splice(i,1);spP(pl.x,pl.y,6);sc+=3}
+      else{gameOver();return}
+    }
+  }
+  // 碰撞 — 金墨
+  for(let i=goldInks.length-1;i>=0;i--){
+    if(goldInks[i].gone()){goldInks.splice(i,1);continue}
+    if(goldInks[i].hit(pl.x,pl.y,pl.r)){
+      goldInks.splice(i,1);slowT=160;spP(pl.x,pl.y,18);
+      beep(600,.12);beep(900,.18);
+    }
+  }
+
+  sc++;
+
+  // 粒子
+  for(let i=pts.length-1;i>=0;i--){
+    const p=pts[i];p.x+=p.vx;p.y+=p.vy;p.life--;
+    if(p.life<=0)pts.splice(i,1);
+  }
+
+  renderPlaying();
+  requestAnimationFrame(loop);
+}
+
+// ===== 渲染 =====
+function renderPlaying(){
+  cx.fillStyle='#fff';cx.fillRect(0,0,W,H);
+  // 淡网格
+  cx.strokeStyle='#f2f2f2';cx.lineWidth=.5;
+  for(let x=0;x<W;x+=40){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke()}
+  for(let y=0;y<H;y+=40){cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke()}
+
+  // 金墨
+  for(const gi of goldInks)gi.draw();
+  // 墨滴
+  for(const ink of inks)ink.draw();
+  // 粒子
+  for(const p of pts){
+    cx.globalAlpha=p.life/p.ml;cx.fillStyle='#555';
+    cx.beginPath();cx.arc(p.x,p.y,p.sz,0,Math.PI*2);cx.fill();
+  }cx.globalAlpha=1;
+
+  // 玩家
+  cx.save();
+  const gl=cx.createRadialGradient(pl.x,pl.y,pl.r,pl.x,pl.y,pl.r+10);
+  gl.addColorStop(0,`rgba(0,0,0,${.12+pl.glow*.08})`);
+  gl.addColorStop(.5,'rgba(100,100,100,.04)');
+  gl.addColorStop(1,'rgba(0,0,0,0)');
+  cx.fillStyle=gl;cx.beginPath();cx.arc(pl.x,pl.y,pl.r+10,0,Math.PI*2);cx.fill();
+  cx.fillStyle='#111';cx.beginPath();cx.arc(pl.x,pl.y,pl.r,0,Math.PI*2);cx.fill();
+  cx.fillStyle='#fff';cx.beginPath();cx.arc(pl.x-1,pl.y-2,pl.r*.25,0,Math.PI*2);cx.fill();
+  if(slowT>0){
+    cx.strokeStyle='rgba(180,140,30,.35)';cx.lineWidth=1.5;cx.setLineDash([3,6]);
+    cx.beginPath();cx.arc(pl.x,pl.y,pl.r+16+Math.sin(fc*.15)*3,0,Math.PI*2);cx.stroke();
+    cx.setLineDash([]);
+  }
+  cx.restore();
+
+  // HUD
+  cx.fillStyle='#111';cx.font='16px "STKaiti","楷体",serif';cx.textAlign='left';
+  cx.fillText(`${sc}`,18,34);
+  cx.textAlign='right';cx.fillStyle='#ccc';cx.font='11px "STKaiti","楷体",serif';
+  cx.fillText(`最佳 ${bestSc}`,W-18,34);
+  if(slowT>0){cx.fillStyle='#b8860b';cx.textAlign='center';cx.fillText('金墨护体',W/2,28)}
+}
+
+function drawTitle(){
+  cx.fillStyle='#fff';cx.fillRect(0,0,W,H);
+  for(let x=0;x<W;x+=40){cx.strokeStyle='#f2f2f2';cx.lineWidth=.5;cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke()}
+  for(let y=0;y<H;y+=40){cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke()}
+  for(let i=0;i<10;i++){
+    const ix=120+(i*70)%(W-240),iy=140+Math.sin(i*2.1+fc*.008)*180;
+    cx.fillStyle='rgba(0,0,0,.04)';cx.beginPath();cx.arc(ix,iy,18+Math.abs(Math.sin(i))*22,0,Math.PI*2);cx.fill();
+  }
+}
+
+function drawGameOverBG(){
+  cx.fillStyle='#fff';cx.fillRect(0,0,W,H);
+  for(const ink of inks)ink.draw();
+  for(const gi of goldInks)gi.draw();
+  for(let i=0;i<30;i++){
+    const a=(i/30)*Math.PI*2,r=pl.r+i*1.2;
+    cx.fillStyle=`rgba(0,0,0,${.25-i*.008})`;cx.beginPath();
+    cx.arc(pl.x+Math.cos(a)*r*.4,pl.y+Math.sin(a)*r*.4,1.5,0,Math.PI*2);cx.fill();
+  }
+}
+
+// ===== 事件 =====
+ca.addEventListener('mousemove',e=>{
+  const r=ca.getBoundingClientRect();
+  mx=(e.clientX-r.left)*(W/r.width);my=(e.clientY-r.top)*(H/r.height);
+  mouseOnCanvas=true;
+});
+ca.addEventListener('mouseleave',()=>{mouseOnCanvas=false});
+ca.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  const r=ca.getBoundingClientRect();
+  mx=(e.touches[0].clientX-r.left)*(W/r.width);my=(e.touches[0].clientY-r.top)*(H/r.height);
+},{passive:false});
+ca.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  const r=ca.getBoundingClientRect();
+  mx=(e.touches[0].clientX-r.left)*(W/r.width);my=(e.touches[0].clientY-r.top)*(H/r.height);
+  if(st==='title')start();
+},{passive:false});
+
+// Esc 退出
+window.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(st==='playing')quitToTitle();
+    else if(st==='paused')quitToTitle();
+  }
+});
+
+// 暂停按钮
+document.getElementById('pb').addEventListener('click',()=>{
+  if(st==='playing'){st='paused';document.getElementById('paused').classList.add('on');document.body.style.cursor='default'}
+});
+document.getElementById('pr').addEventListener('click',()=>{
+  if(st==='paused'){st='playing';document.getElementById('paused').classList.remove('on');document.body.style.cursor='none'}
+});
+document.getElementById('pq').addEventListener('click',quitToTitle);
+
+// 标题按钮
+document.getElementById('bs').addEventListener('click',start);
+// 结束按钮
+document.getElementById('rb').addEventListener('click',start);
+document.getElementById('rq').addEventListener('click',quitToTitle);
+
+// ===== 状态切换 =====
+function start(){
+  pl={x:W/2,y:H/2,r:7,glow:0};
+  inks=[];goldInks=[];pts=[];sc=0;fc=0;spawnT=0;spawnIv=60;diff=1;slowT=0;
+  st='playing';
+  document.getElementById('ts').style.display='none';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('paused').classList.remove('on');
+  document.getElementById('ol').classList.remove('on');
+  document.getElementById('pause').style.display='block';
+  document.body.style.cursor='none';
+}
+
+function quitToTitle(){
+  st='title';
+  document.getElementById('ts').style.display='block';
+  document.getElementById('gos').style.display='none';
+  document.getElementById('paused').classList.remove('on');
+  document.getElementById('ol').classList.add('on');
+  document.getElementById('pause').style.display='none';
+  document.body.style.cursor='default';
+  inks=[];goldInks=[];pts=[];
+}
+
+function gameOver(){
+  st='gameover';
+  if(sc>bestSc){bestSc=sc;localStorage.setItem('moyong_best',bestSc)}
+  let ttl='',sub='',dtl=`得分 ${sc}`;
+  if(sc<25){ttl='浅墨';sub='你触碰了墨涌，被黑暗吞没。'}
+  else if(sc<70){ttl='涉墨';sub='你在墨涌中坚持了片刻，但还是被吞没了。'}
+  else if(sc<140){ttl='御墨';sub='墨如潮水，你如孤舟。虽败犹荣。'}
+  else if(sc<260){ttl='游墨';sub='在墨海中遨游，你已得三分自如。'}
+  else{ttl='墨主';sub='墨涌为你而静。你是这片墨海的主人。'}
+  document.getElementById('fs').textContent=ttl;
+  document.getElementById('scs').textContent=`得分 ${sc}`;
+  document.getElementById('stt').textContent=sub;
+  document.getElementById('sdd').textContent=dtl;
+  document.getElementById('gos').style.display='flex';
+  document.getElementById('ol').classList.add('on');
+  document.getElementById('pause').style.display='none';
+  document.body.style.cursor='default';
+  spP(pl.x,pl.y,30);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
