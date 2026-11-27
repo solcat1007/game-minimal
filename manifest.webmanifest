@@ -1,6 +1,6 @@
 {
-  "name": "一笔禅 · 极简游戏集",
-  "short_name": "一笔禅 · 极简游戏集",
+  "name": "极简禅意 · 小游戏合集 v2.0",
+  "short_name": "极简禅意 v2.0",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

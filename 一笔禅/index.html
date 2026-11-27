@@ -27,7 +27,7 @@ canvas{display:block}
 <canvas id="c"></canvas>
 <div id="ol" class="on">
 <div id="ts">
-<div class="gt">一 笔 禅</div>
+<div class="gt logo">一 笔 禅</div>
 <div class="st">
 从●起点开始，一笔连完所有○节点，不重复经过<br>
 <span style="color:#111">Esc</span> 退出 · 鼠标拖拽连线
@@ -227,6 +227,7 @@ function winLevel(){
   lv++;
   if(lv>maxLv){
     st='gameover';
+    if(window.__solcatAchieve)window.__solcatAchieve(); // v2.0 通关成就
     document.getElementById('fs').textContent='一笔通禅';
     document.getElementById('scs').textContent=`通过全部 ${maxLv} 关`;
     document.getElementById('gos').style.display='flex';
@@ -321,6 +322,205 @@ function gameLoop(){
 
 generateLevel(5); // 初始展示
 requestAnimationFrame(gameLoop);
+</script>
+<script>
+/* ============================================================
+ * SOLCAT EASTER EGG PROTOCOL v2.0 — 通用彩蛋引擎
+ * 零依赖 · 单文件 · 可注入任意 HTML 项目
+ * ============================================================ */
+(function(){
+  'use strict';
+  if (window.__SOLCAT_EGG__) return;
+  window.__SOLCAT_EGG__ = { version:'2.0', unlocked:new Set(), onUnlock:[] };
+
+  var E = window.__SOLCAT_EGG__;
+  var KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+  var seq = [], logoClicks = 0, logoTimer = null;
+
+  /* ---------- 1. 控制台署名（ASCII Art） ---------- */
+  function banner(){
+    var art = '%c\n  ____             _   _       _   _   \n' +
+      ' / ___|  ___  _ __| |_(_) __ _| |_| |__  \n' +
+      ' \\___ \\ / _ \\| \'__| __| |/ _` | __| \'_ \\ \n' +
+      '  ___) | (_) | |  | |_| | (_| | |_| | | |\n' +
+      ' |____/ \\___/|_|   \\__|_|\\__,_|\\__|_| |_|\n';
+    console.log(art, 'color:#26a69a;font-family:monospace;font-weight:bold');
+    console.log('%c☠ SOLCAT EASTER EGG PROTOCOL v2.0 — 你找到了隐藏入口',
+      'color:#666;font-size:11px;letter-spacing:1px');
+    console.log('%c提示：↑↑↓↓←→←→BA · 连点标题 5 次 · 输入 solcat · Ctrl+Shift+T',
+      'color:#999;font-size:10px');
+  }
+
+  /* ---------- 2. 烟花彩带粒子 ---------- */
+  function confetti(){
+    var colors = ['#26a69a','#42a5f5','#ef5350','#ffca28','#ab47bc','#66bb6a','#ff7043'];
+    var cvs = document.createElement('canvas');
+    cvs.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:99999';
+    document.body.appendChild(cvs);
+    var ctx = cvs.getContext('2d'), W = cvs.width = innerWidth, H = cvs.height = innerHeight;
+    var P = [];
+    for (var i=0;i<180;i++) P.push({
+      x:W/2+(Math.random()-.5)*120, y:H*.4+(Math.random()-.5)*40,
+      vx:(Math.random()-.5)*18, vy:-Math.random()*16-4,
+      c:colors[i%colors.length], s:Math.random()*8+4, r:Math.random()*6,
+      life:1, spin:(Math.random()-.5)*.3
+    });
+    var f = 0;
+    (function draw(){
+      f++; ctx.clearRect(0,0,W,H);
+      P.forEach(function(p){
+        p.x+=p.vx; p.y+=p.vy; p.vy+=.35; p.vx*=.99; p.r+=p.spin; p.life-=.006;
+        if(p.life<=0) return;
+        ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.globalAlpha=p.life;
+        ctx.fillStyle=p.c; ctx.fillRect(-p.s/2,-p.s/2,p.s,p.s*.6); ctx.restore();
+      });
+      if (f<180) requestAnimationFrame(draw); else cvs.remove();
+    })();
+  }
+
+  /* ---------- 3. 隐藏开发者面板 ---------- */
+  function devPanel(app){
+    var old = document.getElementById('__egg_panel');
+    if (old){ old.remove(); return; }
+    var d = document.createElement('div');
+    d.id='__egg_panel';
+    d.style.cssText='position:fixed;bottom:20px;right:20px;z-index:99998;width:280px;'+
+      'background:rgba(18,20,26,.94);color:#e0e0e0;border:1px solid #26a69a;border-radius:14px;'+
+      'padding:18px;font:12px/1.7 ui-monospace,monospace;backdrop-filter:blur(12px);'+
+      'box-shadow:0 12px 40px rgba(0,0,0,.4);animation:eggIn .3s ease';
+    d.innerHTML='<div style="color:#26a69a;font-weight:bold;font-size:13px;margin-bottom:10px">'+
+      '☠ SOLCAT 开发者模式</div>'+
+      '<div>应用　　: '+app+'</div>'+
+      '<div>协议　　: EGG PROTOCOL v'+E.version+'</div>'+
+      '<div>解锁数　: '+E.unlocked.size+'</div>'+
+      '<div>UA　　　: '+(navigator.userAgent.slice(0,38))+'…</div>'+
+      '<div>屏幕　　: '+innerWidth+'×'+innerHeight+'</div>'+
+      '<div>运行时间: '+Math.round(performance.now()/1000)+'s</div>'+
+      '<div style="color:#888;margin-top:10px;border-top:1px solid #333;padding-top:8px">'+
+      '已解锁: '+Array.from(E.unlocked).join(', ')+'</div>'+
+      '<button onclick="this.parentNode.remove()" style="margin-top:12px;width:100%;padding:6px;'+
+      'background:#26a69a;color:#fff;border:0;border-radius:6px;cursor:pointer">关闭</button>';
+    document.body.appendChild(d);
+  }
+
+  /* ---------- 4. 隐藏主题（赛博朋克） ---------- */
+  function cyberTheme(){
+    var s=document.getElementById('__egg_cyber');
+    if(s){ s.remove(); document.body.classList.remove('egg-cyber'); return; }
+    s=document.createElement('style'); s.id='__egg_cyber';
+    s.textContent='body.egg-cyber{filter:invert(1) hue-rotate(180deg)!important;}'+
+      'body.egg-cyber *{font-family:"Courier New",monospace!important;letter-spacing:1px}';
+    document.head.appendChild(s); document.body.classList.add('egg-cyber');
+    unlock('cyber','☠ 赛博模式已启用');
+  }
+
+  /* ---------- 5. 解锁分发 ---------- */
+  function unlock(id,msg){
+    if (E.unlocked.has(id)) return;
+    E.unlocked.add(id);
+    if (msg) console.log('%c[EGG] '+msg,'color:#ffca28;font-weight:bold');
+    E.onUnlock.forEach(function(fn){ try{fn(id);}catch(e){} });
+    var t=document.createElement('div');
+    t.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);'+
+      'z-index:99997;background:rgba(18,20,26,.92);color:#ffca28;padding:18px 28px;'+ 
+      'border:1px solid #ffca28;border-radius:12px;font:14px ui-monospace,monospace;'+
+      'pointer-events:none;animation:eggIn .3s ease;box-shadow:0 8px 30px rgba(0,0,0,.4)';
+    t.textContent='☠ '+msg;
+    document.body.appendChild(t); setTimeout(function(){t.remove();},2200);
+  }
+
+  /* ---------- 6. 事件绑定 ---------- */
+  function init(){
+    var app = document.title || 'SOLCAT App';
+    banner();
+
+    // Konami 秘籍
+    addEventListener('keydown', function(e){
+      var k = e.key.length===1 ? e.key.toLowerCase() : e.key;
+      seq.push(k); if(seq.length>KONAMI.length) seq.shift();
+      if (seq.length===KONAMI.length && KONAMI.every(function(v,i){return seq[i]===v;})){
+        seq=[]; confetti(); unlock('konami','KONAMI CODE 已激活！');
+      }
+      // Ctrl+Shift+T → 赛博主题
+      if (e.ctrlKey && e.shiftKey && (e.key==='T'||e.key==='t')){
+        e.preventDefault(); cyberTheme();
+      }
+      // 输入 solcat
+      if (e.key==='Enter' && window.__eggBuf__ === 'solcat'){ cyberTheme(); window.__eggBuf__=''; }
+      if (k.length===1) window.__eggBuf__ = ((window.__eggBuf__||'')+k).slice(-10);
+    });
+
+    // 连点标题 5 次 → 开发者面板
+    addEventListener('DOMContentLoaded', function(){
+      var targets = document.querySelectorAll('h1,.head h1,.logo,header h1');
+      var t = targets[0];
+      if(t){ t.style.cursor='default'; t.addEventListener('click',function(){
+        logoClicks++;
+        clearTimeout(logoTimer);
+        logoTimer=setTimeout(function(){logoClicks=0;},900);
+        if(logoClicks>=5){ logoClicks=0; devPanel(app); unlock('dev','开发者模式已解锁'); }
+      });}
+      // 给 body 加动画 keyframe
+      var a=document.createElement('style');
+      a.textContent='@keyframes eggIn{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}';
+      document.head.appendChild(a);
+    });
+
+    console.log('%c☠ 彩蛋引擎已加载 — 祝你玩得开心','color:#26a69a');
+  }
+
+  if (document.readyState==='loading') addEventListener('DOMContentLoaded',init);
+  else init();
+})();
+
+</script>
+<script>
+
+/* ============================================================
+ * SOLCAT 专属彩蛋 + 成就/时长追踪（由升级脚本注入，保持单文件）
+ * ============================================================ */
+(function(){
+  var E=window.__SOLCAT_EGG__; if(!E)return;
+  var ID='yibichan', NAME='一笔禅';
+  function read(k){try{return JSON.parse(localStorage.getItem(k)||'{}')}catch(e){return {}}}
+  function write(k,o){try{localStorage.setItem(k,JSON.stringify(o))}catch(e){}}
+  function toast(msg){
+    var d=document.createElement('div');
+    d.style.cssText='position:fixed;top:18%;left:50%;transform:translateX(-50%);z-index:99996;'+
+      'background:#111;color:#fff;padding:10px 26px;border-radius:22px;font:14px "STKaiti","楷体",serif;'+
+      'letter-spacing:3px;pointer-events:none;transition:opacity .6s;box-shadow:0 8px 24px rgba(0,0,0,.25)';
+    d.textContent='\u2620 '+msg;document.body.appendChild(d);
+    setTimeout(function(){d.style.opacity='0'},1200);
+    setTimeout(function(){d.remove()},1900);
+  }
+  // 通关成就写入 localStorage（首页读取展示）
+  window.__solcatAchieve=function(){
+    var a=read('solcat_achievements');
+    if(a[ID])return;
+    a[ID]=Date.now();write('solcat_achievements',a);
+    console.log('%c[EGG] 成就解锁：'+NAME,'color:#ffca28;font-weight:bold');
+  };
+  // 游戏时长统计：仅 playing 状态每秒累计
+  setInterval(function(){
+    try{
+      if(typeof st!=='undefined'&&st==='playing'){
+        var t=read('solcat_playtime');t[ID]=(t[ID]||0)+1;write('solcat_playtime',t);
+      }
+    }catch(e){}
+  },1000);
+  // 专属彩蛋：Konami 秘籍触发游戏内特殊效果
+  E.onUnlock.push(function(k){if(k==='konami'){
+try{
+  var seen={},route=[];
+  function dfs(u){route.push(u);seen[u]=1;if(route.length===nodes.length)return true;
+    for(var v=0;v<nodes.length;v++){if(seen[v]||!connectionMatrix[u][v])continue;if(dfs(v))return true}
+    route.pop();delete seen[u];return false}
+  dfs(startNode);path=route;drawOK=false;
+  setTimeout(function(){if(st==='playing'&&path.length===nodes.length)winLevel()},600);
+  toast('一笔通禅 · 自动完成');
+}catch(e){}}});
+})();
+
 </script>
 </body>
 </html>

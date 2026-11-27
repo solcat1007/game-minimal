@@ -14,13 +14,27 @@ body{background:#fff;min-height:100vh;display:flex;justify-content:center;align-
 h1{font-size:32px;color:#111;letter-spacing:14px;text-align:center;margin-bottom:6px;font-weight:400}
 .sub{text-align:center;font-size:13px;color:#999;letter-spacing:6px;margin-bottom:40px}
 .games{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px}
-.card{border:1px solid #111;padding:24px 20px;cursor:pointer;text-decoration:none;color:#111;transition:all .25s;display:block}
-.card:hover{background:#111;color:#fff}
+/* v2.0 卡片悬停动效：上浮 + 阴影 + 顶部描边生长 */
+.card{position:relative;overflow:hidden;border:1px solid #111;padding:24px 20px;cursor:pointer;text-decoration:none;color:#111;transition:transform .28s cubic-bezier(.2,.8,.2,1),box-shadow .28s,background .25s,color .25s;display:block}
+.card::before{content:'';position:absolute;left:0;top:0;width:0;height:2px;background:#111;transition:width .3s}
+.card:hover{background:#111;color:#fff;transform:translateY(-6px);box-shadow:0 14px 28px rgba(0,0,0,.14)}
+.card:hover::before{width:100%;background:#fff}
 .card:hover .desc{color:#ccc}
-.card .name{font-size:22px;letter-spacing:8px;margin-bottom:8px}
+.card .name{font-size:22px;letter-spacing:8px;margin-bottom:8px;transition:transform .3s}
+.card:hover .name{transform:translateX(6px)}
 .card .desc{font-size:13px;color:#888;letter-spacing:2px;line-height:1.8;transition:color .25s}
 .card .tag{display:inline-block;font-size:11px;border:1px solid #ccc;padding:2px 10px;margin-top:10px;letter-spacing:2px}
 .card:hover .tag{border-color:#fff;color:#fff}
+.card .mark{display:block;min-height:14px;margin-top:10px;font-size:10px;color:#26a69a;letter-spacing:1px}
+.card.done .mark{color:#111}
+.card:hover .mark{color:#ffca28}
+/* v2.0 成就 / 时长统计条 */
+.stats{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:22px;margin:-16px 0 30px;font-size:12px;color:#888;letter-spacing:2px}
+.stats b{font-size:20px;color:#111;font-weight:400;margin-right:4px}
+.stats .sep{width:1px;height:16px;background:#ddd}
+.stats button{font-family:inherit;font-size:11px;letter-spacing:2px;color:#aaa;background:none;border:1px solid #ddd;padding:4px 12px;cursor:pointer;transition:all .2s}
+.stats button:hover{color:#111;border-color:#111}
+.secret .desc{color:#666}
 .footer{text-align:center;margin-top:40px;font-size:11px;color:#ccc;letter-spacing:4px}
 </style>
 </head>
@@ -28,41 +42,93 @@ h1{font-size:32px;color:#111;letter-spacing:14px;text-align:center;margin-bottom
 <div class="wrap">
 <h1>极 简 禅 意</h1>
 <div class="sub">小 游 戏 合 集</div>
+<div class="stats">
+<div><b id="achCount">0</b>/6 已通关</div>
+<div class="sep"></div>
+<div>累计游玩 <b id="timeTotal">0秒</b></div>
+<button id="resetBtn">重置进度</button>
+</div>
 <div class="games">
-<a class="card" href="墨涌/index.html">
+<a class="card" href="墨涌/index.html" data-id="moyong">
 <div class="name">墨 涌</div>
 <div class="desc">白底黑墨，墨核躲避四面八方涌来的墨滴，金墨可获短暂无敌。</div>
 <div class="tag">躲避</div>
+<div class="mark"></div>
 </a>
-<a class="card" href="字坠/index.html">
+<a class="card" href="字坠/index.html" data-id="zizhui">
 <div class="name">字 坠</div>
 <div class="desc">汉字从天而降，输入拼音首字母将其击碎。漏掉一字失去一次机会。</div>
 <div class="tag">打字</div>
+<div class="mark"></div>
 </a>
-<a class="card" href="一笔禅/index.html">
+<a class="card" href="一笔禅/index.html" data-id="yibichan">
 <div class="name">一笔禅</div>
 <div class="desc">从起点开始，一笔连完所有节点。不重复经过，鼠标拖拽连线。</div>
 <div class="tag">连线</div>
+<div class="mark"></div>
 </a>
-<a class="card" href="弹墨/index.html">
+<a class="card" href="弹墨/index.html" data-id="tanmo">
 <div class="name">弹 墨</div>
-<div class="desc">移动鼠标控制拍板，弹珠击碎砖块。8关递增难度，墨尽则败。</div>
+<div class="desc">移动鼠标控制拍板，弹珠击碎砖块。8关递增难度，v2.0 可选起始关卡。</div>
 <div class="tag">打砖块</div>
+<div class="mark"></div>
 </a>
-<a class="card" href="棋影/index.html">
+<a class="card" href="棋影/index.html" data-id="qiying">
 <div class="name">棋 影</div>
-<div class="desc">黑白翻转棋，落子翻转对方棋子。人机对战，黑先白后。</div>
+<div class="desc">黑白翻转棋，落子翻转对方棋子。人机对战，v2.0 三档 AI 难度。</div>
 <div class="tag">棋类</div>
+<div class="mark"></div>
 </a>
-<a class="card" href="碎镜/index.html">
+<a class="card" href="碎镜/index.html" data-id="suijing">
 <div class="name">碎 镜</div>
 <div class="desc">点击两块碎片交换位置，拼回禅意几何图案。6关递增难度。</div>
 <div class="tag">拼图</div>
+<div class="mark"></div>
 </a>
+<div class="card secret" id="secret" style="display:none">
+<div class="name">彩 蛋</div>
+<div class="desc">你找到了隐藏的第六感。试试 ↑↑↓↓←→←→BA、连点标题五次，或输入 solcat 回车。</div>
+<div class="tag">隐藏</div>
+</div>
 </div>
 <div class="footer">Esc 随时退出 · 纯白极简 · 零外部依赖</div>
 </div>
 
+<script>
+/* v2.0 成就系统 + 游戏时长统计：读取各游戏写入的 localStorage 记录 */
+(function(){
+  function read(k){try{return JSON.parse(localStorage.getItem(k)||'{}')}catch(e){return {}}}
+  function fmt(s){
+    s=Math.floor(s||0);
+    if(s<60)return s+'秒';
+    var m=Math.floor(s/60),ss=s%60;
+    if(m<60)return m+'分'+(ss?ss+'秒':'');
+    return Math.floor(m/60)+'小时'+(m%60)+'分';
+  }
+  var ach=read('solcat_achievements'),tm=read('solcat_playtime');
+  var ids=['moyong','zizhui','yibichan','tanmo','qiying','suijing'];
+  var done=0,total=0;
+  ids.forEach(function(id){
+    var card=document.querySelector('.card[data-id="'+id+'"]');
+    if(!card)return;
+    var sec=tm[id]||0;total+=sec;
+    var cleared=!!ach[id];if(cleared)done++;
+    var mark=card.querySelector('.mark'),txt=[];
+    if(cleared)txt.push('✓ 已通关');
+    if(sec>0)txt.push('游玩 '+fmt(sec));
+    mark.textContent=txt.join(' · ');
+    card.classList.toggle('done',cleared);
+  });
+  document.getElementById('achCount').textContent=done;
+  document.getElementById('timeTotal').textContent=fmt(total);
+  document.getElementById('resetBtn').addEventListener('click',function(){
+    if(!confirm('确定清空所有通关成就与游戏时长记录？'))return;
+    localStorage.removeItem('solcat_achievements');
+    localStorage.removeItem('solcat_playtime');
+    location.reload();
+  });
+})();
+</script>
 <script>
 /* PWA: 注册 Service Worker，注册后本页被缓存，断网也能打开。
    catch 掉异常，浏览器不支持时不影响正常功能。 */
@@ -71,6 +137,178 @@ if ('serviceWorker' in navigator){
     navigator.serviceWorker.register('./sw.js').catch(function(){});
   });
 }
+</script>
+<script>
+/* ============================================================
+ * SOLCAT EASTER EGG PROTOCOL v2.0 — 通用彩蛋引擎
+ * 零依赖 · 单文件 · 可注入任意 HTML 项目
+ * ============================================================ */
+(function(){
+  'use strict';
+  if (window.__SOLCAT_EGG__) return;
+  window.__SOLCAT_EGG__ = { version:'2.0', unlocked:new Set(), onUnlock:[] };
+
+  var E = window.__SOLCAT_EGG__;
+  var KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+  var seq = [], logoClicks = 0, logoTimer = null;
+
+  /* ---------- 1. 控制台署名（ASCII Art） ---------- */
+  function banner(){
+    var art = '%c\n  ____             _   _       _   _   \n' +
+      ' / ___|  ___  _ __| |_(_) __ _| |_| |__  \n' +
+      ' \\___ \\ / _ \\| \'__| __| |/ _` | __| \'_ \\ \n' +
+      '  ___) | (_) | |  | |_| | (_| | |_| | | |\n' +
+      ' |____/ \\___/|_|   \\__|_|\\__,_|\\__|_| |_|\n';
+    console.log(art, 'color:#26a69a;font-family:monospace;font-weight:bold');
+    console.log('%c☠ SOLCAT EASTER EGG PROTOCOL v2.0 — 你找到了隐藏入口',
+      'color:#666;font-size:11px;letter-spacing:1px');
+    console.log('%c提示：↑↑↓↓←→←→BA · 连点标题 5 次 · 输入 solcat · Ctrl+Shift+T',
+      'color:#999;font-size:10px');
+  }
+
+  /* ---------- 2. 烟花彩带粒子 ---------- */
+  function confetti(){
+    var colors = ['#26a69a','#42a5f5','#ef5350','#ffca28','#ab47bc','#66bb6a','#ff7043'];
+    var cvs = document.createElement('canvas');
+    cvs.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:99999';
+    document.body.appendChild(cvs);
+    var ctx = cvs.getContext('2d'), W = cvs.width = innerWidth, H = cvs.height = innerHeight;
+    var P = [];
+    for (var i=0;i<180;i++) P.push({
+      x:W/2+(Math.random()-.5)*120, y:H*.4+(Math.random()-.5)*40,
+      vx:(Math.random()-.5)*18, vy:-Math.random()*16-4,
+      c:colors[i%colors.length], s:Math.random()*8+4, r:Math.random()*6,
+      life:1, spin:(Math.random()-.5)*.3
+    });
+    var f = 0;
+    (function draw(){
+      f++; ctx.clearRect(0,0,W,H);
+      P.forEach(function(p){
+        p.x+=p.vx; p.y+=p.vy; p.vy+=.35; p.vx*=.99; p.r+=p.spin; p.life-=.006;
+        if(p.life<=0) return;
+        ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.globalAlpha=p.life;
+        ctx.fillStyle=p.c; ctx.fillRect(-p.s/2,-p.s/2,p.s,p.s*.6); ctx.restore();
+      });
+      if (f<180) requestAnimationFrame(draw); else cvs.remove();
+    })();
+  }
+
+  /* ---------- 3. 隐藏开发者面板 ---------- */
+  function devPanel(app){
+    var old = document.getElementById('__egg_panel');
+    if (old){ old.remove(); return; }
+    var d = document.createElement('div');
+    d.id='__egg_panel';
+    d.style.cssText='position:fixed;bottom:20px;right:20px;z-index:99998;width:280px;'+
+      'background:rgba(18,20,26,.94);color:#e0e0e0;border:1px solid #26a69a;border-radius:14px;'+
+      'padding:18px;font:12px/1.7 ui-monospace,monospace;backdrop-filter:blur(12px);'+
+      'box-shadow:0 12px 40px rgba(0,0,0,.4);animation:eggIn .3s ease';
+    d.innerHTML='<div style="color:#26a69a;font-weight:bold;font-size:13px;margin-bottom:10px">'+
+      '☠ SOLCAT 开发者模式</div>'+
+      '<div>应用　　: '+app+'</div>'+
+      '<div>协议　　: EGG PROTOCOL v'+E.version+'</div>'+
+      '<div>解锁数　: '+E.unlocked.size+'</div>'+
+      '<div>UA　　　: '+(navigator.userAgent.slice(0,38))+'…</div>'+
+      '<div>屏幕　　: '+innerWidth+'×'+innerHeight+'</div>'+
+      '<div>运行时间: '+Math.round(performance.now()/1000)+'s</div>'+
+      '<div style="color:#888;margin-top:10px;border-top:1px solid #333;padding-top:8px">'+
+      '已解锁: '+Array.from(E.unlocked).join(', ')+'</div>'+
+      '<button onclick="this.parentNode.remove()" style="margin-top:12px;width:100%;padding:6px;'+
+      'background:#26a69a;color:#fff;border:0;border-radius:6px;cursor:pointer">关闭</button>';
+    document.body.appendChild(d);
+  }
+
+  /* ---------- 4. 隐藏主题（赛博朋克） ---------- */
+  function cyberTheme(){
+    var s=document.getElementById('__egg_cyber');
+    if(s){ s.remove(); document.body.classList.remove('egg-cyber'); return; }
+    s=document.createElement('style'); s.id='__egg_cyber';
+    s.textContent='body.egg-cyber{filter:invert(1) hue-rotate(180deg)!important;}'+
+      'body.egg-cyber *{font-family:"Courier New",monospace!important;letter-spacing:1px}';
+    document.head.appendChild(s); document.body.classList.add('egg-cyber');
+    unlock('cyber','☠ 赛博模式已启用');
+  }
+
+  /* ---------- 5. 解锁分发 ---------- */
+  function unlock(id,msg){
+    if (E.unlocked.has(id)) return;
+    E.unlocked.add(id);
+    if (msg) console.log('%c[EGG] '+msg,'color:#ffca28;font-weight:bold');
+    E.onUnlock.forEach(function(fn){ try{fn(id);}catch(e){} });
+    var t=document.createElement('div');
+    t.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);'+
+      'z-index:99997;background:rgba(18,20,26,.92);color:#ffca28;padding:18px 28px;'+ 
+      'border:1px solid #ffca28;border-radius:12px;font:14px ui-monospace,monospace;'+
+      'pointer-events:none;animation:eggIn .3s ease;box-shadow:0 8px 30px rgba(0,0,0,.4)';
+    t.textContent='☠ '+msg;
+    document.body.appendChild(t); setTimeout(function(){t.remove();},2200);
+  }
+
+  /* ---------- 6. 事件绑定 ---------- */
+  function init(){
+    var app = document.title || 'SOLCAT App';
+    banner();
+
+    // Konami 秘籍
+    addEventListener('keydown', function(e){
+      var k = e.key.length===1 ? e.key.toLowerCase() : e.key;
+      seq.push(k); if(seq.length>KONAMI.length) seq.shift();
+      if (seq.length===KONAMI.length && KONAMI.every(function(v,i){return seq[i]===v;})){
+        seq=[]; confetti(); unlock('konami','KONAMI CODE 已激活！');
+      }
+      // Ctrl+Shift+T → 赛博主题
+      if (e.ctrlKey && e.shiftKey && (e.key==='T'||e.key==='t')){
+        e.preventDefault(); cyberTheme();
+      }
+      // 输入 solcat
+      if (e.key==='Enter' && window.__eggBuf__ === 'solcat'){ cyberTheme(); window.__eggBuf__=''; }
+      if (k.length===1) window.__eggBuf__ = ((window.__eggBuf__||'')+k).slice(-10);
+    });
+
+    // 连点标题 5 次 → 开发者面板
+    addEventListener('DOMContentLoaded', function(){
+      var targets = document.querySelectorAll('h1,.head h1,.logo,header h1');
+      var t = targets[0];
+      if(t){ t.style.cursor='default'; t.addEventListener('click',function(){
+        logoClicks++;
+        clearTimeout(logoTimer);
+        logoTimer=setTimeout(function(){logoClicks=0;},900);
+        if(logoClicks>=5){ logoClicks=0; devPanel(app); unlock('dev','开发者模式已解锁'); }
+      });}
+      // 给 body 加动画 keyframe
+      var a=document.createElement('style');
+      a.textContent='@keyframes eggIn{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}';
+      document.head.appendChild(a);
+    });
+
+    console.log('%c☠ 彩蛋引擎已加载 — 祝你玩得开心','color:#26a69a');
+  }
+
+  if (document.readyState==='loading') addEventListener('DOMContentLoaded',init);
+  else init();
+})();
+
+</script>
+<script>
+
+(function(){
+  var E=window.__SOLCAT_EGG__; if(!E)return;
+  function toast(msg){
+    var d=document.createElement('div');
+    d.style.cssText='position:fixed;top:18%;left:50%;transform:translateX(-50%);z-index:99996;'+
+      'background:#111;color:#fff;padding:10px 26px;border-radius:22px;font:14px "STKaiti","楷体",serif;'+
+      'letter-spacing:3px;pointer-events:none;transition:opacity .6s';
+    d.textContent='\u2620 '+msg;document.body.appendChild(d);
+    setTimeout(function(){d.style.opacity='0'},1200);
+    setTimeout(function(){d.remove()},1900);
+  }
+  E.onUnlock.push(function(k){
+    if(k!=='konami')return;
+    var s=document.getElementById('secret');if(s)s.style.display='block';
+    toast('六艺皆通 · 禅意圆满');
+  });
+})();
+
 </script>
 </body>
 </html>
